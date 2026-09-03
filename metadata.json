@@ -1,0 +1,6 @@
+{
+  "name": "Refra",
+  "description": "Minimalist cinematic streaming experience designed for fluid discovery and playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

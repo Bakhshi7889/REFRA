@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  --app-bg: #0c0d10;
+  --font-family-current: 'Plus Jakarta Sans', sans-serif;
+  --color-dominant: #14161f;
+  --dominant-rgb: 20, 22, 31;
+  --color-secondary: #222635;
+  --secondary-rgb: 34, 38, 53;
+  --color-secondary-2: #2d3345;
+  --secondary-2-rgb: 45, 51, 69;
+  --color-accent: #ffffff;
+  --accent-rgb: 255, 255, 255;
+  --color-accent-contrast: #0a0a0c;
+  
+  --glass-bg: rgba(20, 22, 31, 0.65);
+  --glass-bg-elevated: rgba(20, 22, 31, 0.85);
+  --glass-subtle-bg: rgba(34, 38, 53, 0.16);
+  --glass-pill-bg: rgba(20, 22, 31, 0.75);
+  --glass-border: rgba(34, 38, 53, 0.22);
+  --glass-border-subtle: rgba(255, 255, 255, 0.08);
+  --glass-sheet-bg: rgba(14, 16, 22, 0.94);
+  
+  --btn-primary-bg: #ffffff;
+  --btn-primary-text: #0a0a0c;
+  --btn-secondary-bg: rgba(34, 38, 53, 0.22);
+  --btn-secondary-hover: rgba(34, 38, 53, 0.35);
+  --btn-secondary-text: #ffffff;
+  --accent-glow: 0 0 24px rgba(255, 255, 255, 0.38);
+  --badge-bg: rgba(255, 255, 255, 0.14);
+  --badge-text: #ffffff;
+  --badge-border: rgba(255, 255, 255, 0.25);
+}
+
+body {
+  font-family: var(--font-family-current);
+  transition: background-color 0.4s ease-out;
+}
+
+.font-panchange {
+  font-family: 'Unbounded', 'Syne', 'Plus Jakarta Sans', sans-serif !important;
+  letter-spacing: -0.02em;
+}
+
+.font-inter {
+  font-family: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+.font-modernist {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif !important;
+  letter-spacing: -0.01em;
+}
+
+.font-kola {
+  font-family: 'Comfortaa', 'Plus Jakarta Sans', cursive, sans-serif !important;
+}
+
+@layer utilities {
+  .liquid-glass {
+    backdrop-filter: url(#liquid-glass) blur(4px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    transition: background-color 0.35s ease, border-color 0.35s ease;
+  }
+
+  .liquid-glass-subtle {
+    backdrop-filter: url(#liquid-glass-subtle) blur(3px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    background-color: var(--glass-subtle-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.35s ease, border-color 0.35s ease;
+  }
+
+  .liquid-glass-pill {
+    backdrop-filter: url(#liquid-glass-subtle) blur(4px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    background-color: var(--glass-pill-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.32);
+    transition: background-color 0.35s ease, border-color 0.35s ease;
+  }
+
+  /* Themed Glass Card for Sections, Dialogs and Popups */
+  .glass-card-themed {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    transition: background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+  }
+
+  /* Themed Primary Action Button (Accent 10%) */
+  .btn-theme-primary {
+    background-color: var(--btn-primary-bg);
+    color: var(--btn-primary-text);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.32);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn-theme-primary:hover {
+    filter: brightness(1.08);
+    box-shadow: 0 6px 24px rgba(var(--accent-rgb), 0.45);
+  }
+
+  /* Themed Secondary Button & Inset Pills (Secondary 30%) */
+  .btn-theme-secondary {
+    background-color: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text);
+    border: 1px solid var(--glass-border);
+    transition: all 0.2s ease;
+  }
+  .btn-theme-secondary:hover {
+    background-color: var(--btn-secondary-hover);
+    color: #ffffff;
+  }
+
+  /* Themed Badge / Pill */
+  .badge-theme {
+    background-color: var(--badge-bg);
+    color: var(--badge-text);
+    border: 1px solid var(--badge-border);
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Safe area padding */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top), 12px);
+}
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 16px);
+}
