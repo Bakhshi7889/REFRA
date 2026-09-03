@@ -10,6 +10,9 @@ import {
   SunMedium,
   CheckCircle2,
   RefreshCcw,
+  Droplets,
+  Sliders,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -20,6 +23,7 @@ import {
   FontOptionId,
   saveThemeConfig,
 } from '../services/themeStore';
+import { PRESET_WALLPAPERS, PresetWallpaper } from '../data/wallpapers';
 
 interface ThemeSettingsSectionProps {
   themeConfig: UiThemeConfig;
@@ -109,6 +113,41 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
     };
     onThemeChanged(updated);
     saveThemeConfig(updated);
+  };
+
+  // Change Blur overlay
+  const handleBlurChange = (blur: number) => {
+    const updated: UiThemeConfig = {
+      ...themeConfig,
+      bgBlur: blur,
+    };
+    onThemeChanged(updated);
+    saveThemeConfig(updated);
+  };
+
+  // Reset Dim & Blur dials to default
+  const handleResetDials = () => {
+    const updated: UiThemeConfig = {
+      ...themeConfig,
+      bgOverlayDim: 40,
+      bgBlur: 0,
+    };
+    onThemeChanged(updated);
+    saveThemeConfig(updated);
+    if (showToast) showToast('Reset dials: 40% dim, 0px blur');
+  };
+
+  // Select Preset 9:16 Wallpaper
+  const handleSelectPresetWallpaper = (wp: PresetWallpaper) => {
+    const updated: UiThemeConfig = {
+      ...themeConfig,
+      bgMode: 'image',
+      customBgImage: wp.url,
+      customBgImageName: `${wp.name} (9:16)`,
+    };
+    onThemeChanged(updated);
+    saveThemeConfig(updated);
+    if (showToast) showToast(`Applied ${wp.name} wallpaper`);
   };
 
   // Select Font
@@ -225,17 +264,32 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
         </button>
       </div>
 
-      {/* ================= TAB 1: BACKGROUND CANVAS & UPLOAD ================= */}
+      {/* ================= TAB 1: BACKGROUND CANVAS & 9:16 WALLPAPERS ================= */}
       {activeSubTab === 'background' && (
         <div className="rounded-3xl glass-card-themed p-4 space-y-4">
           {/* Surface Mode Toggle */}
-          <div className="flex items-center justify-between pb-1 border-b border-white/5">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5">
             <div>
               <h5 className="text-xs font-semibold text-white">Canvas Surface</h5>
-              <p className="text-[11px] text-neutral-400">Deep OLED tone or custom photo wallpaper</p>
+              <p className="text-[11px] text-neutral-400">
+                18 Curated 9:16 Wallpapers or Deep OLED Swatches
+              </p>
             </div>
 
             <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.05] border border-white/10 text-[11px]">
+              <button
+                type="button"
+                onClick={handleSwitchToImageMode}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                  themeConfig.bgMode === 'image'
+                    ? 'btn-theme-primary font-bold shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>9:16 Wallpapers</span>
+                {themeConfig.customBgImage && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -243,31 +297,308 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   onThemeChanged(updated);
                   saveThemeConfig(updated);
                 }}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
                   themeConfig.bgMode === 'color'
                     ? 'btn-theme-primary font-bold shadow-sm'
                     : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                Color
-              </button>
-              <button
-                type="button"
-                onClick={handleSwitchToImageMode}
-                className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                  themeConfig.bgMode === 'image'
-                    ? 'btn-theme-primary font-bold shadow-sm'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <span>Wallpaper</span>
-                {themeConfig.customBgImage && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                <Palette className="w-3.5 h-3.5" />
+                <span>OLED Colors</span>
               </button>
             </div>
           </div>
 
-          {/* 15 Precision Background Colors */}
+          {/* ================= ATMOSPHERIC DIALS (DIM DIAL & BLUR DIAL) ================= */}
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3.5">
+            <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-[var(--color-accent)]/15 text-[var(--color-accent)] flex items-center justify-center">
+                  <Sliders className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h6 className="text-xs font-semibold text-white">Atmospheric Optics Dials</h6>
+                  <p className="text-[10px] text-neutral-400">
+                    Dual hardware-accelerated Dimming & Gaussian Blur
+                  </p>
+                </div>
+              </div>
+
+              {(themeConfig.bgOverlayDim !== 40 || (themeConfig.bgBlur || 0) !== 0) && (
+                <button
+                  type="button"
+                  onClick={handleResetDials}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-medium text-neutral-300 transition-colors cursor-pointer flex items-center gap-1"
+                  title="Reset dials to default (40% dim, 0px blur)"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Dials</span>
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Dial 1: Dim Dial */}
+              <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-neutral-300 font-medium flex items-center gap-1.5">
+                    <SunMedium className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Dim Dial</span>
+                  </span>
+                  <span className="font-mono text-xs font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
+                    {themeConfig.bgOverlayDim}%
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="85"
+                  step="5"
+                  value={themeConfig.bgOverlayDim}
+                  onChange={(e) => handleDimChange(Number(e.target.value))}
+                  className="w-full accent-[var(--color-accent)] cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+                />
+
+                <div className="flex items-center justify-between text-[10px] text-neutral-400">
+                  <span>0% (Raw)</span>
+                  <span>40% (Default)</span>
+                  <span>85% (OLED)</span>
+                </div>
+
+                {/* Quick Presets for Dim */}
+                <div className="flex items-center gap-1 pt-1">
+                  {[
+                    { label: 'Clear', val: 15 },
+                    { label: 'Medium', val: 40 },
+                    { label: 'Dark', val: 65 },
+                    { label: 'Deep', val: 80 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => handleDimChange(p.val)}
+                      className={`flex-1 py-1 rounded-lg text-[10px] font-medium transition-all cursor-pointer ${
+                        themeConfig.bgOverlayDim === p.val
+                          ? 'bg-white/20 text-white font-bold'
+                          : 'bg-white/5 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dial 2: Blur Dial */}
+              <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-neutral-300 font-medium flex items-center gap-1.5">
+                    <Droplets className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Blur Dial</span>
+                  </span>
+                  <span className="font-mono text-xs font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
+                    {(themeConfig.bgBlur || 0) === 0 ? '0px (Sharp)' : `${themeConfig.bgBlur}px`}
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0"
+                  max="32"
+                  step="1"
+                  value={themeConfig.bgBlur || 0}
+                  onChange={(e) => handleBlurChange(Number(e.target.value))}
+                  className="w-full accent-[var(--color-accent)] cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
+                />
+
+                <div className="flex items-center justify-between text-[10px] text-neutral-400">
+                  <span>0px (Cinema)</span>
+                  <span>12px (Diffused)</span>
+                  <span>32px (Frost)</span>
+                </div>
+
+                {/* Quick Presets for Blur */}
+                <div className="flex items-center gap-1 pt-1">
+                  {[
+                    { label: 'Sharp', val: 0 },
+                    { label: 'Soft', val: 6 },
+                    { label: 'Diffused', val: 14 },
+                    { label: 'Frost', val: 24 },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => handleBlurChange(p.val)}
+                      className={`flex-1 py-1 rounded-lg text-[10px] font-medium transition-all cursor-pointer ${
+                        (themeConfig.bgBlur || 0) === p.val
+                          ? 'bg-white/20 text-white font-bold'
+                          : 'bg-white/5 text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ================= 18 CURATED 9:16 WALLPAPERS ================= */}
           <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>18 Curated 9:16 Wallpapers</span>
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/10 text-neutral-300">
+                  9:16 Portrait
+                </span>
+              </div>
+              <span className="text-[11px] text-neutral-400 truncate max-w-[150px]">
+                {themeConfig.bgMode === 'image' && themeConfig.customBgImage
+                  ? themeConfig.customBgImageName || 'Active Wallpaper'
+                  : 'OLED Swatch Active'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+              {PRESET_WALLPAPERS.map((wp) => {
+                const isSelected =
+                  themeConfig.bgMode === 'image' && themeConfig.customBgImage === wp.url;
+                return (
+                  <button
+                    key={wp.id}
+                    type="button"
+                    onClick={() => handleSelectPresetWallpaper(wp)}
+                    className={`group relative rounded-2xl overflow-hidden aspect-[9/16] border transition-all cursor-pointer text-left focus:outline-none ${
+                      isSelected
+                        ? 'border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/50 shadow-xl scale-[1.03]'
+                        : 'border-white/10 hover:border-white/30 hover:scale-[1.02] opacity-85 hover:opacity-100'
+                    }`}
+                  >
+                    {/* 9:16 Image */}
+                    <img
+                      src={wp.url}
+                      alt={wp.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+
+                    {/* Gradient vignette & badge */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent p-2 flex flex-col justify-between">
+                      <div className="flex justify-end">
+                        {isSelected ? (
+                          <div className="w-5 h-5 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-contrast)] flex items-center justify-center shadow-md">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                        ) : (
+                          <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/60 text-white/80 backdrop-blur-sm">
+                            {wp.tag}
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-[11px] font-bold text-white leading-tight truncate drop-shadow-sm">
+                          {wp.name}
+                        </div>
+                        <div className="text-[9px] text-neutral-300 font-medium">9:16 HD</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ================= CUSTOM WALLPAPER UPLOAD & ACTIVE PREVIEW ================= */}
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h6 className="text-xs font-semibold text-white">Custom Device Wallpaper</h6>
+                  <p className="text-[10px] text-neutral-400">
+                    Upload your own photo or custom artwork • Stored in IndexedDB
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {themeConfig.customBgImage && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveCustomImage}
+                    className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/20 text-neutral-400 hover:text-red-300 text-xs font-medium transition-colors cursor-pointer flex items-center gap-1"
+                    title="Clear wallpaper"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-xl btn-theme-secondary text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload File</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Active Wallpaper Preview Card */}
+            {themeConfig.customBgImage && (
+              <div className="relative rounded-2xl overflow-hidden h-24 border border-white/10 group">
+                <img
+                  src={themeConfig.customBgImage}
+                  alt="Active Wallpaper"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent p-3 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/80 text-white flex items-center gap-1 backdrop-blur-md">
+                      <CheckCircle2 className="w-3 h-3" />
+                      {themeConfig.bgMode === 'image' ? 'Active Wallpaper Layer' : 'Stored in Memory'}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleRemoveCustomImage}
+                      className="p-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 text-red-300 transition-colors cursor-pointer backdrop-blur-md"
+                      title="Clear wallpaper"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-white">
+                    <span className="truncate max-w-[220px] text-[11px] font-medium">
+                      {themeConfig.customBgImageName || 'Custom Wallpaper'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSwitchToImageMode}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer backdrop-blur-md ${
+                        themeConfig.bgMode === 'image'
+                          ? 'btn-theme-primary'
+                          : 'bg-black/60 text-white hover:bg-black/90'
+                      }`}
+                    >
+                      {themeConfig.bgMode === 'image' ? 'Currently Active' : 'Set Active'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ================= 15 PRECISION OLED BACKGROUND COLORS ================= */}
+          <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-neutral-300">
                 15 Dark Canvas Swatches
@@ -310,102 +641,6 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                 );
               })}
             </div>
-          </div>
-
-          {/* Apple-style Custom Wallpaper Card */}
-          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center">
-                  <Upload className="w-4 h-4" />
-                </div>
-                <div>
-                  <h6 className="text-xs font-semibold text-white">Custom Wallpaper</h6>
-                  <p className="text-[10px] text-neutral-400">
-                    Stored locally in IndexedDB • 1-Click switch
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1.5 rounded-xl btn-theme-secondary text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>{themeConfig.customBgImage ? 'Change' : 'Upload'}</span>
-              </button>
-            </div>
-
-            {/* If an image is loaded, show preview and controls */}
-            {themeConfig.customBgImage && (
-              <div className="pt-1 space-y-3">
-                <div className="relative rounded-2xl overflow-hidden h-28 border border-white/10 group">
-                  <img
-                    src={themeConfig.customBgImage}
-                    alt="Custom Wallpaper"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-3 flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/80 text-white flex items-center gap-1 backdrop-blur-md">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Saved in IndexedDB
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={handleRemoveCustomImage}
-                        className="p-1.5 rounded-lg bg-red-950/80 hover:bg-red-900 text-red-300 transition-colors cursor-pointer backdrop-blur-md"
-                        title="Delete wallpaper"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-white">
-                      <span className="truncate max-w-[200px] text-[11px] font-medium">
-                        {themeConfig.customBgImageName || 'wallpaper.jpg'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleSwitchToImageMode}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer backdrop-blur-md ${
-                          themeConfig.bgMode === 'image'
-                            ? 'btn-theme-primary'
-                            : 'bg-black/60 text-white hover:bg-black/90'
-                        }`}
-                      >
-                        {themeConfig.bgMode === 'image' ? 'Active Wallpaper' : 'Set Active'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Wallpaper Scrim Dimmer Slider */}
-                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-neutral-300 font-medium flex items-center gap-1.5">
-                      <SunMedium className="w-3.5 h-3.5 text-neutral-400" />
-                      Wallpaper Darkening Scrim
-                    </span>
-                    <span className="font-mono text-neutral-400">{themeConfig.bgOverlayDim}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="10"
-                    max="85"
-                    step="5"
-                    value={themeConfig.bgOverlayDim}
-                    onChange={(e) => handleDimChange(Number(e.target.value))}
-                    className="w-full accent-[var(--color-accent)] cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
-                  />
-                  <p className="text-[10px] text-neutral-500">
-                    Adjusts contrast overlay to ensure high-contrast readability.
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

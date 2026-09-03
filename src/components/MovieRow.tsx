@@ -2,7 +2,7 @@ import React from 'react';
 import { Star, Plus, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl } from '../utils/imageHelpers';
+import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
 
 interface MovieRowProps {
   title: string;
@@ -18,8 +18,6 @@ interface MovieRowProps {
 
 export const MovieRow: React.FC<MovieRowProps> = ({
   title,
-  subtitle,
-  badge,
   movies,
   onMovieClick,
   watchlist,
@@ -35,21 +33,11 @@ export const MovieRow: React.FC<MovieRowProps> = ({
         <div className="w-full h-px bg-white/[0.06] mb-3.5" />
       )}
 
-      {/* Row Header */}
+      {/* Row Header - Minimalist, no clutter tags or count badges */}
       <div className="flex items-center justify-between mb-2.5">
-        <div className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
-            {title}
-          </h3>
-          {badge && (
-            <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-white/10 text-white border border-white/10 tracking-tight">
-              {badge}
-            </span>
-          )}
-        </div>
-        <span className="text-[10px] text-neutral-500 font-medium">
-          {subtitle || `${movies.length} films`}
-        </span>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+          {title}
+        </h3>
       </div>
 
       {/* Posters Snap Carousel */}
@@ -70,6 +58,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 alt={movie.title}
                 referrerPolicy="no-referrer"
                 loading="lazy"
+                onError={(e) => handleImageError(e, false)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
               />
 

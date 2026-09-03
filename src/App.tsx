@@ -23,6 +23,7 @@ import { Movie, CategoryFilter, NavTab } from './types';
 import { Search, Star, Loader2, Plus, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getPosterUrl } from './utils/imageHelpers';
+import { getValid6HourCache, save6HourCache } from './services/movieCache';
 import {
   getIndexedDbWatchlist,
   saveIndexedDbWatchlist,
@@ -36,29 +37,56 @@ import {
   saveThemeConfig,
   applyThemeToDocument,
 } from './services/themeStore';
+import {
+  initGoogleAnalytics,
+  trackPageView,
+  trackSearchQuery,
+  trackMediaView,
+  trackStreamStart,
+  trackWatchlistAction,
+  trackThemeSelection,
+} from './services/analytics';
 
 export default function App() {
+  const [cachedData] = useState(() => getValid6HourCache());
+
   const [spotlightMovies, setSpotlightMovies] = useState<Movie[]>(
-    FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured)
+    () =>
+      cachedData?.spotlightMovies ||
+      FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured)
   );
-  const [trendingMovies, setTrendingMovies] = useState<Movie[]>(FALLBACK_MOVIES);
+  const [trendingMovies, setTrendingMovies] = useState<Movie[]>(
+    () => cachedData?.trendingMovies || FALLBACK_MOVIES
+  );
   const [animeMovies, setAnimeMovies] = useState<Movie[]>(
-    FALLBACK_MOVIES.filter(
-      (m) =>
-        m.genres.includes('Animation') ||
-        m.badge?.toLowerCase().includes('anime') ||
-        m.badge?.toLowerCase().includes('ghibli')
-    )
+    () =>
+      cachedData?.animeMovies ||
+      FALLBACK_MOVIES.filter(
+        (m) =>
+          m.genres.includes('Animation') ||
+          m.badge?.toLowerCase().includes('anime') ||
+          m.badge?.toLowerCase().includes('ghibli')
+      )
   );
-  const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>(FALLBACK_MOVIES.slice(1));
+  const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>(
+    () => cachedData?.topRatedMovies || FALLBACK_MOVIES.slice(1)
+  );
   const [scifiMovies, setScifiMovies] = useState<Movie[]>(
-    FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'))
+    () =>
+      cachedData?.scifiMovies ||
+      FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'))
   );
   const [actionMovies, setActionMovies] = useState<Movie[]>(
-    FALLBACK_MOVIES.filter((m) => m.genres.includes('Action'))
+    () =>
+      cachedData?.actionMovies ||
+      FALLBACK_MOVIES.filter((m) => m.genres.includes('Action'))
   );
   const [thrillerMovies, setThrillerMovies] = useState<Movie[]>(
-    FALLBACK_MOVIES.filter((m) => m.genres.includes('Thriller') || m.genres.includes('Drama'))
+    () =>
+      cachedData?.thrillerMovies ||
+      FALLBACK_MOVIES.filter(
+        (m) => m.genres.includes('Thriller') || m.genres.includes('Drama')
+      )
   );
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,6 +101,7 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    initGoogleAnalytics();
     loadSavedThemeConfig().then((cfg) => {
       if (isMounted) {
         setThemeConfig(cfg);
@@ -84,9 +113,16 @@ export default function App() {
     };
   }, []);
 
+  // Track page navigation (Home, Explore, Watchlist, Profile)
+  useEffect(() => {
+    const tabName = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
+    trackPageView(`Refra - ${tabName}`, `/${activeTab === 'home' ? '' : activeTab}`);
+  }, [activeTab]);
+
   const handleThemeChange = (newConfig: UiThemeConfig) => {
     setThemeConfig(newConfig);
     saveThemeConfig(newConfig);
+    trackThemeSelection(newConfig.selectedPaletteId || 'neutral', newConfig.bgMode);
   };
 
   // Watchlist state with IndexedDB & localStorage persistence
@@ -138,13 +174,60 @@ export default function App() {
         ]);
 
         if (isMounted) {
-          if (spotlights.length > 0) setSpotlightMovies(spotlights);
-          if (trending.length > 0) setTrendingMovies(trending);
-          if (anime.length > 0) setAnimeMovies(anime);
-          if (topRated.length > 0) setTopRatedMovies(topRated);
-          if (scifi.length > 0) setScifiMovies(scifi);
-          if (action.length > 0) setActionMovies(action);
-          if (thrillers.length > 0) setThrillerMovies(thrillers);
+          const finalSpotlights =
+            spotlights.length > 0
+              ? spotlights
+              : cachedData?.spotlightMovies ||
+                FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured);
+          const finalTrending =
+            trending.length > 0
+              ? trending
+              : cachedData?.trendingMovies || FALLBACK_MOVIES;
+          const finalAnime =
+            anime.length > 0
+              ? anime
+              : cachedData?.animeMovies ||
+                FALLBACK_MOVIES.filter((m) => m.genres.includes('Animation'));
+          const finalTopRated =
+            topRated.length > 0
+              ? topRated
+              : cachedData?.topRatedMovies || FALLBACK_MOVIES.slice(1);
+          const finalScifi =
+            scifi.length > 0
+              ? scifi
+              : cachedData?.scifiMovies ||
+                FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'));
+          const finalAction =
+            action.length > 0
+              ? action
+              : cachedData?.actionMovies ||
+                FALLBACK_MOVIES.filter((m) => m.genres.includes('Action'));
+          const finalThrillers =
+            thrillers.length > 0
+              ? thrillers
+              : cachedData?.thrillerMovies ||
+                FALLBACK_MOVIES.filter(
+                  (m) => m.genres.includes('Thriller') || m.genres.includes('Drama')
+                );
+
+          setSpotlightMovies(finalSpotlights);
+          setTrendingMovies(finalTrending);
+          setAnimeMovies(finalAnime);
+          setTopRatedMovies(finalTopRated);
+          setScifiMovies(finalScifi);
+          setActionMovies(finalAction);
+          setThrillerMovies(finalThrillers);
+
+          // Save to 6-hour cache with image preloading
+          save6HourCache({
+            spotlightMovies: finalSpotlights,
+            trendingMovies: finalTrending,
+            animeMovies: finalAnime,
+            topRatedMovies: finalTopRated,
+            scifiMovies: finalScifi,
+            actionMovies: finalAction,
+            thrillerMovies: finalThrillers,
+          });
         }
       } catch (err) {
         console.warn('API fetch notice:', err);
@@ -173,6 +256,7 @@ export default function App() {
         if (isMounted) {
           setSearchResults(results);
           setIsSearching(false);
+          trackSearchQuery(searchQuery, results.length);
         }
       } catch {
         if (isMounted) setIsSearching(false);
@@ -184,39 +268,6 @@ export default function App() {
       clearTimeout(timeout);
     };
   }, [searchQuery]);
-
-  const toggleWatchlist = (movieId: string) => {
-    setWatchlist((prev) =>
-      prev.includes(movieId)
-        ? prev.filter((id) => id !== movieId)
-        : [...prev, movieId]
-    );
-  };
-
-  const handlePlayMovie = (movie: Movie) => {
-    // Record into IndexedDB history
-    saveIndexedDbHistoryItem({
-      id: `hist_${movie.id}`,
-      movieId: movie.id,
-      title: movie.title,
-      posterUrl: movie.posterUrl,
-      backdropUrl: movie.backdropUrl,
-      progressPercent: 12,
-      durationString: movie.duration,
-      lastWatchedTimestamp: Date.now(),
-    });
-
-    // Scrobble to Trakt if connected
-    scrobbleToTrakt(movie.title, 12, 'start');
-
-    setAutoPlayDetails(true);
-    setSelectedMovie(movie);
-  };
-
-  const handleOpenDetails = (movie: Movie) => {
-    setAutoPlayDetails(false);
-    setSelectedMovie(movie);
-  };
 
   // Combine all movies for unified lookup
   const allMoviesMap = useMemo(() => {
@@ -244,6 +295,55 @@ export default function App() {
     thrillerMovies,
   ]);
 
+  const toggleWatchlist = (movieId: string) => {
+    const isAdding = !watchlist.includes(movieId);
+    const movieItem = allMoviesMap.get(movieId);
+    setWatchlist((prev) =>
+      prev.includes(movieId)
+        ? prev.filter((id) => id !== movieId)
+        : [...prev, movieId]
+    );
+    trackWatchlistAction(movieId, movieItem?.title || movieId, isAdding ? 'add' : 'remove');
+  };
+
+  const handlePlayMovie = (movie: Movie) => {
+    // Record into IndexedDB history
+    saveIndexedDbHistoryItem({
+      id: `hist_${movie.id}`,
+      movieId: movie.id,
+      title: movie.title,
+      posterUrl: movie.posterUrl,
+      backdropUrl: movie.backdropUrl,
+      progressPercent: 12,
+      durationString: movie.duration,
+      lastWatchedTimestamp: Date.now(),
+    });
+
+    // Scrobble to Trakt if connected
+    scrobbleToTrakt(movie.title, 12, 'start');
+
+    trackStreamStart({
+      id: movie.id,
+      title: movie.title,
+      isAnime: movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime'),
+    });
+
+    setAutoPlayDetails(true);
+    setSelectedMovie(movie);
+  };
+
+  const handleOpenDetails = (movie: Movie) => {
+    trackMediaView({
+      id: movie.id,
+      title: movie.title,
+      genres: movie.genres,
+      score: movie.score,
+      releaseYear: movie.releaseYear,
+    });
+    setAutoPlayDetails(false);
+    setSelectedMovie(movie);
+  };
+
   const watchlistMovies = useMemo(() => {
     return watchlist
       .map((id) => allMoviesMap.get(id))
@@ -262,16 +362,19 @@ export default function App() {
       {isCustomImageActive && themeConfig.customBgImage && (
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
           <div
-            className="w-full h-full bg-cover bg-center bg-no-repeat transition-all duration-700"
+            className="w-full h-full bg-cover bg-center bg-no-repeat transition-all duration-500"
             style={{
               backgroundImage: `url(${themeConfig.customBgImage})`,
+              filter: `blur(${themeConfig.bgBlur || 0}px)`,
+              transform: (themeConfig.bgBlur || 0) > 0 ? 'scale(1.06)' : 'scale(1)',
+              willChange: 'filter, transform',
             }}
           />
           {/* Dimming Scrim for Readability */}
           <div
-            className="absolute inset-0 transition-opacity duration-300 backdrop-blur-[2px]"
+            className="absolute inset-0 transition-opacity duration-300"
             style={{
-              backgroundColor: `rgba(0, 0, 0, ${themeConfig.bgOverlayDim / 100})`,
+              backgroundColor: `rgba(0, 0, 0, ${(themeConfig.bgOverlayDim ?? 40) / 100})`,
             }}
           />
         </div>
@@ -293,13 +396,15 @@ export default function App() {
           {activeTab === 'home' && (
             <>
               {/* Hero Premiere Spotlight Carousel (3s art cycle, 15s movie switch, swipe gestures) */}
-              <HeroSpotlight
-                movies={spotlightMovies}
-                onPlay={handlePlayMovie}
-                onOpenDetails={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-              />
+              {spotlightMovies.length > 0 && (
+                <HeroSpotlight
+                  movies={spotlightMovies}
+                  onPlay={handlePlayMovie}
+                  onOpenDetails={handleOpenDetails}
+                  watchlist={watchlist}
+                  onToggleWatchlist={toggleWatchlist}
+                />
+              )}
 
               {/* Continue Watching Section */}
               <ContinueWatching
@@ -311,7 +416,6 @@ export default function App() {
               {/* 1st Divider: Trending Masterworks */}
               <MovieRow
                 title="Trending Masterworks"
-                badge="Trending"
                 movies={trendingMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
@@ -320,11 +424,9 @@ export default function App() {
                 showDivider={true}
               />
 
-              {/* 2nd Divider: Trending Anime (Placed directly below Trending) */}
+              {/* 2nd Divider: Trending Anime */}
               <MovieRow
                 title="Trending Anime"
-                badge="Anime"
-                subtitle="Masterpieces & Series"
                 movies={animeMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
@@ -336,7 +438,6 @@ export default function App() {
               {/* 3rd Divider: Top Rated Cinema */}
               <MovieRow
                 title="Top Rated Cinema"
-                badge="Masterpieces"
                 movies={topRatedMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
@@ -348,7 +449,6 @@ export default function App() {
               {/* 4th Divider: Sci-Fi & Speculative Fiction */}
               <MovieRow
                 title="Sci-Fi & Speculative Fiction"
-                badge="Sci-Fi"
                 movies={scifiMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
@@ -360,7 +460,6 @@ export default function App() {
               {/* 5th Divider: Action & Adrenaline */}
               <MovieRow
                 title="Action & Adrenaline"
-                badge="4K HDR"
                 movies={actionMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
@@ -372,7 +471,6 @@ export default function App() {
               {/* 6th Divider: Psychological Thrillers */}
               <MovieRow
                 title="Psychological Thrillers"
-                badge="A24 / Neo-Noir"
                 movies={thrillerMovies}
                 onMovieClick={handleOpenDetails}
                 watchlist={watchlist}

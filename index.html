@@ -3,15 +3,100 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Refra</title>
-    <meta name="description" content="Minimalist cinematic streaming experience designed for fluid discovery and playback." />
-    <meta property="og:title" content="Refra" />
-    <meta property="og:description" content="Minimalist cinematic streaming experience designed for fluid discovery and playback." />
+    <title>Refra — 4K Ad-Free Cinematic Streaming & Anime</title>
+    <meta name="description" content="Minimalist ad-free 4K cinematic streaming and anime discovery platform." />
+    <meta name="keywords" content="Refra, 4K streaming, ad free streaming, watch movies online, anime streaming, free movies no ads, spatial audio, trakt scrobble, minimalist streaming, 4K UHD cinema" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="author" content="Refra" />
+    <link rel="canonical" href="https://refra.netlify.app" />
+
+    <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Refra" />
+    <meta property="og:title" content="Refra — 4K Ad-Free Cinematic Streaming & Anime" />
+    <meta property="og:description" content="Minimalist ad-free 4K cinematic streaming and anime discovery platform." />
+    <meta property="og:url" content="https://refra.netlify.app" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&h=630&q=80" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Refra 4K Cinematic Streaming Interface" />
+
+    <!-- Twitter Card / X -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Refra — 4K Ad-Free Cinematic Streaming & Anime" />
+    <meta name="twitter:description" content="Minimalist ad-free 4K cinematic streaming and anime discovery platform." />
+    <meta name="twitter:image" content="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&h=630&q=80" />
+
+    <!-- Schema.org Structured Data (JSON-LD) for Generative AI Search (ChatGPT, Claude, Perplexity, Google SGE) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebApplication",
+          "@id": "https://refra.netlify.app/#webapp",
+          "name": "Refra",
+          "url": "https://refra.netlify.app",
+          "description": "Minimalist ad-free 4K cinematic streaming and anime discovery platform featuring zero ads, spatial audio, and Trakt synchronization.",
+          "applicationCategory": "EntertainmentApplication",
+          "operatingSystem": "All (Web, iOS, Android, macOS, Windows, Linux)",
+          "browserRequirements": "Requires JavaScript and HTML5 video support",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          },
+          "featureList": [
+            "100% Ad-Free streaming experience with zero interruptions or pop-ups",
+            "4K Ultra HD, HDR, and IMAX Enhanced playback streams",
+            "Spatial Master Audio & Dolby Atmos 7.1 sound mixes",
+            "Anime streaming hub integrated with AniList and MyAnimeList",
+            "Trakt.tv two-way watchlist and history synchronization",
+            "Multi-server stream failover with instantaneous mirror switching",
+            "Fluid liquid glass interface with customizable ambient palettes"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://refra.netlify.app/#website",
+          "name": "Refra",
+          "url": "https://refra.netlify.app",
+          "description": "Minimalist ad-free 4K cinematic streaming and anime discovery platform.",
+          "publisher": {
+            "@type": "Organization",
+            "name": "Refra",
+            "url": "https://refra.netlify.app"
+          },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://refra.netlify.app/?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
+    }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Syne:wght@500;700;800&family=Unbounded:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDD1JH8J06"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-QDD1JH8J06', {
+        send_page_view: true,
+        cookie_flags: 'SameSite=None;Secure'
+      });
+    </script>
   </head>
   <body class="bg-[#0c0d10] text-[#f0f2f5] font-sans antialiased selection:bg-neutral-800 selection:text-white overflow-x-hidden min-h-screen">
     <!-- SVG Filter for Liquid Glass Optical Distortion -->
@@ -27,6 +112,23 @@
         </filter>
       </defs>
     </svg>
+    <noscript>
+      <div style="padding: 2.5rem; max-width: 800px; margin: 0 auto; color: #f0f2f5; font-family: system-ui, -apple-system, sans-serif; line-height: 1.6;">
+        <h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 0.75rem;">Refra — 4K Ad-Free Cinematic Streaming & Anime</h1>
+        <p style="font-size: 1.125rem; color: #94a3b8; margin-bottom: 1.5rem;">
+          Refra is a modern, minimalist streaming web platform engineered for 4K UHD movies, television series, and Japanese anime with a strict 100% ad-free experience, spatial audio, and Trakt.tv synchronization.
+        </p>
+        <h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem;">Platform Highlights</h2>
+        <ul style="list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.5rem; color: #cbd5e1;">
+          <li><strong>100% Ad-Free Experience:</strong> Zero commercial interruptions, popups, or intrusive advertisements.</li>
+          <li><strong>4K UHD & HDR Resolution:</strong> High-fidelity cinematic streams supporting 4K, HDR, and IMAX Enhanced aspect profiles.</li>
+          <li><strong>Spatial Master Audio:</strong> Dolby Atmos 7.1 and multi-channel master audio mixes.</li>
+          <li><strong>Complete Anime Library:</strong> Live integration with AniList and MyAnimeList for trending anime and movies.</li>
+          <li><strong>Trakt.tv Synchronization:</strong> Track progress, scrobble viewing sessions, and manage watchlists seamlessly.</li>
+        </ul>
+        <p style="color: #64748b; font-size: 0.875rem;">Please enable JavaScript to launch the full interactive Refra cinematic interface.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

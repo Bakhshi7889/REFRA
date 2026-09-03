@@ -322,6 +322,7 @@ export interface UiThemeConfig {
   customBgImage: string | null;
   customBgImageName: string | null;
   bgOverlayDim: number; // 0 to 80%
+  bgBlur: number; // 0 to 40px
   selectedFontId: FontOptionId;
   selectedPaletteId: string | null; // null means standard neutral
 }
@@ -332,6 +333,7 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   customBgImage: null,
   customBgImageName: null,
   bgOverlayDim: 40,
+  bgBlur: 0,
   selectedFontId: 'inter',
   selectedPaletteId: null,
 };
@@ -418,13 +420,13 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   root.style.setProperty('--color-accent-contrast', contrastText);
 
   // Set Liquid Glass & Blur Tint CSS Variables
-  root.style.setProperty('--glass-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.65)`);
-  root.style.setProperty('--glass-bg-elevated', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.85)`);
+  root.style.setProperty('--glass-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.55)`);
+  root.style.setProperty('--glass-bg-elevated', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.72)`);
   root.style.setProperty('--glass-subtle-bg', `rgba(${secRgb.r}, ${secRgb.g}, ${secRgb.b}, 0.16)`);
-  root.style.setProperty('--glass-pill-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.75)`);
-  root.style.setProperty('--glass-border', `rgba(${secRgb.r}, ${secRgb.g}, ${secRgb.b}, 0.22)`);
+  root.style.setProperty('--glass-pill-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.58)`);
+  root.style.setProperty('--glass-border', `rgba(255, 255, 255, 0.12)`);
   root.style.setProperty('--glass-border-subtle', `rgba(255, 255, 255, 0.08)`);
-  root.style.setProperty('--glass-sheet-bg', `rgba(${Math.max(6, Math.floor(domRgb.r * 0.4))}, ${Math.max(6, Math.floor(domRgb.g * 0.4))}, ${Math.max(8, Math.floor(domRgb.b * 0.4))}, 0.94)`);
+  root.style.setProperty('--glass-sheet-bg', `rgba(${Math.max(6, Math.floor(domRgb.r * 0.4))}, ${Math.max(6, Math.floor(domRgb.g * 0.4))}, ${Math.max(8, Math.floor(domRgb.b * 0.4))}, 0.85)`);
 
   // Set Button & Interaction Tint CSS Variables
   root.style.setProperty('--btn-primary-bg', accentHex);

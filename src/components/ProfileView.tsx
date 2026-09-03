@@ -24,8 +24,15 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
+  BarChart3,
+  Activity,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  getMeasurementId,
+  saveManualMeasurementId,
+  trackEvent,
+} from '../services/analytics';
 import {
   getIndexedDbStats,
   getIndexedDbTraktSession,
@@ -122,6 +129,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+
+  // Google Analytics 4 Config State
+  const [gaInputId, setGaInputId] = useState(() => getMeasurementId());
+  const [gaSavedSuccess, setGaSavedSuccess] = useState(false);
+  const [gaTestSuccess, setGaTestSuccess] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -277,6 +289,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (onWatchlistUpdated) onWatchlistUpdated([]);
     showToast('Purged all local IndexedDB data and reset to default');
     loadDatabaseInfo();
+  };
+
+  const handleSaveGaId = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    saveManualMeasurementId(gaInputId);
+    setGaSavedSuccess(true);
+    showToast(gaInputId.trim() ? `Saved Measurement ID: ${gaInputId.trim()}` : 'Cleared Measurement ID');
+    setTimeout(() => setGaSavedSuccess(false), 2500);
+  };
+
+  const handleTestGaEvent = () => {
+    trackEvent('test_ping', {
+      user_action: 'Profile Test Event',
+      note: 'Verified from Refra Settings',
+    });
+    setGaTestSuccess(true);
+    showToast('Sent test event to Google Analytics Realtime!');
+    setTimeout(() => setGaTestSuccess(false), 2500);
   };
 
   const formatBytes = (bytes: number) => {
@@ -768,6 +798,96 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               Live
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* ================= SECTION 6: GOOGLE ANALYTICS 4 & TELEMETRY ================= */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-3">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            Audience Telemetry (Google Analytics 4)
+          </h4>
+          {getMeasurementId() ? (
+            <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Connected
+            </span>
+          ) : (
+            <span className="text-[10px] text-amber-400/90 flex items-center gap-1 font-medium bg-amber-950/30 px-2 py-0.5 rounded-full border border-amber-500/20">
+              Awaiting ID
+            </span>
+          )}
+        </div>
+
+        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 space-y-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 text-neutral-300">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold text-white flex items-center gap-2">
+                <span>Real-Time Visitor & Device Analytics</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-relaxed font-light">
+                Tracks live visitors, countries, cities, device models (mobile, tablet, desktop), browsers, searches, and stream playback metrics.
+              </p>
+            </div>
+          </div>
+
+          {/* Configuration Form */}
+          <form onSubmit={handleSaveGaId} className="space-y-2.5 pt-1">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <label htmlFor="ga-measurement-input" className="text-neutral-300 font-medium">
+                  GA4 Measurement ID
+                </label>
+                <span className="text-[10px] text-neutral-400">
+                  Format: <code className="text-neutral-300 bg-white/5 px-1 py-0.5 rounded">G-XXXXXXXXXX</code>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="ga-measurement-input"
+                  type="text"
+                  value={gaInputId}
+                  onChange={(e) => setGaInputId(e.target.value)}
+                  placeholder="e.g. G-1234567890"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 font-mono"
+                />
+                <button
+                  type="submit"
+                  className="py-2 px-3.5 rounded-xl bg-white text-neutral-950 text-xs font-semibold hover:bg-neutral-200 transition-colors cursor-pointer shrink-0"
+                >
+                  {gaSavedSuccess ? 'Saved!' : 'Save ID'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+              <button
+                type="button"
+                onClick={handleTestGaEvent}
+                className="py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border border-white/10 text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Activity className="w-3.5 h-3.5 text-neutral-400" />
+                <span>{gaTestSuccess ? 'Ping Sent!' : 'Send Test Realtime Ping'}</span>
+              </button>
+
+              <a
+                href="https://analytics.google.com"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-neutral-400 hover:text-white flex items-center gap-1 transition-colors"
+              >
+                <span>Open Google Analytics</span>
+                <ExternalLink className="w-3 h-3 text-neutral-400" />
+              </a>
+            </div>
+
+            <div className="p-2.5 rounded-2xl bg-white/[0.02] border border-white/5 text-[10px] text-neutral-400 leading-normal font-light">
+              <span className="font-semibold text-neutral-300">Netlify Deployment Tip:</span> You can also add <code className="text-neutral-200 bg-white/5 px-1 rounded font-mono">VITE_GA_MEASUREMENT_ID</code> directly under your Netlify site Environment Variables.
+            </div>
+          </form>
         </div>
       </div>
 

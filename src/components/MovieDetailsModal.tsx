@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Movie } from '../types';
 import { getBackdropUrl, getPosterUrl } from '../utils/imageHelpers';
 import { ReviewsSection } from './ReviewsSection';
+import { trackServerPreference, trackStreamStart } from '../services/analytics';
 
 interface MovieDetailsModalProps {
   movie: Movie | null;
@@ -295,7 +296,15 @@ export const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   type="button"
-                  onClick={() => setIsPlayingTrailer(true)}
+                  onClick={() => {
+                    setIsPlayingTrailer(true);
+                    trackStreamStart({
+                      id: movie.id,
+                      title: movie.title,
+                      sourceServer: streamQuality,
+                      isAnime: movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime'),
+                    });
+                  }}
                   className="flex-1 py-3 px-5 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2 shadow-lg transition-colors min-h-[46px]"
                 >
                   <Play className="w-4 h-4 fill-neutral-950" />
@@ -396,7 +405,10 @@ export const MovieDetailsModal: React.FC<MovieDetailsModalProps> = ({
                         <button
                           key={source}
                           type="button"
-                          onClick={() => setStreamQuality(source as any)}
+                          onClick={() => {
+                            setStreamQuality(source as any);
+                            trackServerPreference(source);
+                          }}
                           className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                             (streamQuality as string) === source || (streamQuality === '4K' && source === 'VidSrc Pro')
                               ? 'bg-neutral-200 text-neutral-950 font-semibold'

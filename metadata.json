@@ -1,6 +1,6 @@
 {
   "name": "Refra",
-  "description": "Minimalist cinematic streaming experience designed for fluid discovery and playback.",
+  "description": "Minimalist ad-free 4K cinematic streaming and anime discovery platform.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

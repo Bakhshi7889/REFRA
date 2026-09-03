@@ -13,13 +13,13 @@
   --accent-rgb: 255, 255, 255;
   --color-accent-contrast: #0a0a0c;
   
-  --glass-bg: rgba(20, 22, 31, 0.65);
-  --glass-bg-elevated: rgba(20, 22, 31, 0.85);
+  --glass-bg: rgba(20, 22, 31, 0.55);
+  --glass-bg-elevated: rgba(20, 22, 31, 0.72);
   --glass-subtle-bg: rgba(34, 38, 53, 0.16);
-  --glass-pill-bg: rgba(20, 22, 31, 0.75);
-  --glass-border: rgba(34, 38, 53, 0.22);
+  --glass-pill-bg: rgba(20, 22, 31, 0.58);
+  --glass-border: rgba(255, 255, 255, 0.12);
   --glass-border-subtle: rgba(255, 255, 255, 0.08);
-  --glass-sheet-bg: rgba(14, 16, 22, 0.94);
+  --glass-sheet-bg: rgba(14, 16, 22, 0.85);
   
   --btn-primary-bg: #ffffff;
   --btn-primary-text: #0a0a0c;
@@ -57,30 +57,63 @@ body {
 
 @layer utilities {
   .liquid-glass {
-    backdrop-filter: url(#liquid-glass) blur(4px) saturate(160%);
-    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: url("#liquid-glass") blur(3px) saturate(180%);
     background-color: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.36);
     transition: background-color 0.35s ease, border-color 0.35s ease;
   }
 
   .liquid-glass-subtle {
-    backdrop-filter: url(#liquid-glass-subtle) blur(3px) saturate(140%);
-    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: url("#liquid-glass-subtle") blur(2px) saturate(160%);
     background-color: var(--glass-subtle-bg);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
     transition: background-color 0.35s ease, border-color 0.35s ease;
   }
 
   .liquid-glass-pill {
-    backdrop-filter: url(#liquid-glass-subtle) blur(4px) saturate(150%);
-    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(175%);
+    backdrop-filter: blur(20px) saturate(175%);
+    backdrop-filter: url("#liquid-glass-subtle") blur(3px) saturate(175%);
     background-color: var(--glass-pill-bg);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.32);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
     transition: background-color 0.35s ease, border-color 0.35s ease;
+  }
+
+  /* Universal backdrop-blur utilities ensuring -webkit prefix works on Safari / iOS / mobile WebKit */
+  .backdrop-blur-xs {
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+  .backdrop-blur-sm {
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+  .backdrop-blur-md {
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  .backdrop-blur-lg {
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+  .backdrop-blur-xl {
+    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(28px);
+  }
+  .backdrop-blur-2xl {
+    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px);
+  }
+  .backdrop-blur-3xl {
+    -webkit-backdrop-filter: blur(64px);
+    backdrop-filter: blur(64px);
   }
 
   /* Themed Glass Card for Sections, Dialogs and Popups */

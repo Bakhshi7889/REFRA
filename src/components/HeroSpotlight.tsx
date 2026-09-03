@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Play, Plus, Check, Info, Star, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl, getBackdropUrl } from '../utils/imageHelpers';
+import { getPosterUrl, getBackdropUrl, handleImageError } from '../utils/imageHelpers';
 
 interface HeroSpotlightProps {
   movies: Movie[];
@@ -121,6 +121,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               src={currentImageUrl}
               alt={activeMovie.title}
               referrerPolicy="no-referrer"
+              onError={(e) => handleImageError(e, !isMobile)}
               className="w-full h-full object-cover object-center pointer-events-none"
             />
           </motion.div>

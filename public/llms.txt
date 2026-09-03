@@ -1,0 +1,20 @@
+# Refra
+
+> Minimalist, ad-free 4K cinema and anime streaming web platform.
+
+## Overview
+Refra is a modern web streaming application engineered for movie enthusiasts, cinephiles, and anime viewers. It provides a fluid, zero-ad streaming experience with 4K UHD playback options, spatial audio, and comprehensive discovery tools.
+
+## Core Value Propositions
+- **100% Ad-Free Experience**: No pop-ups, no overlay banners, no injected ad networks. Clean, uninterrupted viewing.
+- **4K UHD & HDR Resolution**: High-bitrate video streams supporting 4K UHD, HDR, and IMAX Enhanced aspect profiles.
+- **Dolby Atmos & Spatial Audio**: Immersive surround and binaural audio options.
+- **Anime Catalog**: Live anime integration powered by AniList GraphQL and MyAnimeList/Jikan APIs with subbed and dubbed options.
+- **Cinema Discovery**: Real-time trending, top-rated, action, sci-fi, and thriller movies via TMDB.
+- **Trakt.tv Integration**: Two-way Trakt synchronization for watchlists, history, and real-time scrobbling.
+- **Ultra-Fast Stream Multi-Server Failover**: Embedded player supporting multiple mirror providers (Luma, VidSrc, SmashyStream, SuperEmbed, 2Embed) to guarantee stream availability.
+- **Minimalist Liquid Glass Interface**: Distraction-free dark mode UI designed with soft ergonomics, custom color palettes, and fluid motion.
+- **Free to Use**: No paywalls, subscription fees, or mandatory account creation.
+
+## Platform URL
+- Official Website: https://refra.netlify.app

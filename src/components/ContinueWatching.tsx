@@ -2,7 +2,7 @@ import React from 'react';
 import { Play, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
-import { getBackdropUrl } from '../utils/imageHelpers';
+import { getBackdropUrl, handleImageError } from '../utils/imageHelpers';
 
 interface ContinueWatchingProps {
   movies: Movie[];
@@ -25,9 +25,6 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
         <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
           Continue Watching
         </h3>
-        <span className="text-[10px] text-neutral-500 font-medium">
-          {inProgressMovies.length} in progress
-        </span>
       </div>
 
       <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x">
@@ -45,6 +42,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
                 src={getBackdropUrl(movie.backdropUrl, 'w1280', movie.posterUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
+                onError={(e) => handleImageError(e, true)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
               />
 
