@@ -13,30 +13,22 @@ const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 hours
 export async function checkServerAvailable(): Promise<boolean> {
   if (isServerAvailable !== null) return isServerAvailable;
 
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    // Known static hosting providers where no custom Node/Express server runs
-    if (
-      host.includes('netlify.app') ||
-      host.includes('github.io') ||
-      host.includes('pages.dev') ||
-      host.includes('vercel.app')
-    ) {
-      isServerAvailable = false;
-      return false;
-    }
-  }
-
   try {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
+    
     const res = await fetch('/api/health', {
-      signal: AbortSignal.timeout ? AbortSignal.timeout(1500) : undefined,
+      signal: controller ? controller.signal : undefined,
     });
+    
+    if (timeoutId) clearTimeout(timeoutId);
+    
     if (res.ok) {
       isServerAvailable = true;
       return true;
     }
   } catch {
-    // Server is not running or route 404ed
+    // Server is not running or route 404ed, fallback to client-side
   }
 
   isServerAvailable = false;

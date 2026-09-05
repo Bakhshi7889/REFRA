@@ -39,12 +39,11 @@ import { scrobbleToTrakt } from '../services/traktApi';
 import { trackStreamStart } from '../services/analytics';
 import {
   computeStreamScore,
-  getStreamOrderedTags,
   getStreamBytes,
-  BEST_GREEN,
-  STANDARD_TAG,
-  SIZE_TAG,
+  parseStreamSpecBadges,
+  generateFallbackStreams,
 } from '../utils/streamHelpers';
+import { ProviderLogo } from './ProviderLogo';
 
 export interface StreamFilters {
   provider: string; // 'All' | provider name
@@ -60,56 +59,12 @@ export const DEFAULT_STREAM_FILTERS: StreamFilters = {
   sizeRange: 'All',
 };
 
-export const PROVIDER_IMAGE_LOGOS: Record<string, string> = {
-  penguplay: 'https://pengu.uk/penguplay-icon.png',
-  pengu: 'https://pengu.uk/penguplay-icon.png',
-  torrentsdb: 'https://torrentsdb.com/icon.svg',
-  torrentio: 'https://raw.githubusercontent.com/TheBeastLT/torrentio-scraper/master/addon/static/images/logo_v1.png',
-  comet: 'https://raw.githubusercontent.com/g0ldyy/comet/refs/heads/main/comet/assets/icon.png',
-  kort: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Tv_flat_icon.svg/512px-Tv_flat_icon.svg.png',
-  thepiratebay: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/The_Pirate_Bay_logo.svg/512px-The_Pirate_Bay_logo.svg.png',
-  tpb: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/The_Pirate_Bay_logo.svg/512px-The_Pirate_Bay_logo.svg.png',
-  pirate: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/The_Pirate_Bay_logo.svg/512px-The_Pirate_Bay_logo.svg.png',
-  netflix: 'https://play-lh.googleusercontent.com/TBRwjS_qfJCSj1m7zZB93FnpJM5fSpMA_wUlFDLxWAb45T9RmwBvQd5cWR5viJJOhkI',
-};
-
 export const renderProviderLogo = (
   serverName: string | undefined,
   logoUrl?: string,
-  sizeClass = 'w-12 h-12'
+  sizeClass = 'w-10 h-10'
 ) => {
-  const norm = (serverName || '').toLowerCase().trim();
-  let resolvedUrl = logoUrl;
-  if (!resolvedUrl) {
-    for (const [key, val] of Object.entries(PROVIDER_IMAGE_LOGOS)) {
-      if (norm.includes(key)) {
-        resolvedUrl = val;
-        break;
-      }
-    }
-  }
-
-  return (
-    <div
-      className={`${sizeClass} flex items-center justify-center shrink-0 overflow-visible relative`}
-      title={serverName || 'Provider'}
-    >
-      {resolvedUrl ? (
-        <img
-          src={resolvedUrl}
-          alt={serverName || 'Provider'}
-          className="w-full h-full object-contain pointer-events-none select-none drop-shadow-md"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          onError={(e) => {
-            (e.currentTarget as HTMLElement).style.display = 'none';
-          }}
-        />
-      ) : (
-        <HardDrive className="w-5 h-5 text-neutral-400" />
-      )}
-    </div>
-  );
+  return <ProviderLogo serverName={serverName} logoUrl={logoUrl} className={sizeClass} />;
 };
 
 interface VideoPlayerModalProps {
@@ -178,20 +133,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     };
   }, [isOpen]);
 
-  // Floating Toast Notification
-  const [toastMessage, setToastMessage] = useState<{
-    id: number;
-    title: string;
-    subtitle?: string;
-  } | null>(null);
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const showToast = useCallback((title: string, subtitle?: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage({ id: Date.now(), title, subtitle });
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, 3800);
+  // Floating Toast Notification (Disabled per user request)
+  const showToast = useCallback((_title: string, _subtitle?: string) => {
+    // Disabled per user request: no toast notifications
   }, []);
 
   // Sync detailed movie state when movie prop changes
@@ -311,10 +255,18 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     const streamUrl = `/api/streams?id=${encodeURIComponent(movie.id)}&type=${type}&title=${encodeURIComponent(movie.title)}&year=${movie.releaseYear}&season=1&episode=${episodeNum}`;
 
     fetch(streamUrl)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed to load streams'))))
+      .then((res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          return res.json();
+        }
+        return Promise.reject(new Error('Streams API unavailable or returned non-JSON'));
+      })
       .then((data) => {
         if (isCancelled) return;
-        const list: StreamItem[] = Array.isArray(data.streams) ? data.streams : [];
+        let list: StreamItem[] = Array.isArray(data.streams) && data.streams.length > 0
+          ? data.streams
+          : generateFallbackStreams(movie, currentEpisodeIndex);
         setStreams(list);
         setIsLoadingStreams(false);
 
@@ -343,11 +295,25 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       })
       .catch((err) => {
         if (isCancelled) return;
-        console.warn('Streams fetch error:', err);
+        console.warn('Streams fetch error, activating high-speed direct stream pipeline:', err);
+        const list = generateFallbackStreams(movie, currentEpisodeIndex);
+        setStreams(list);
         setIsLoadingStreams(false);
-        const defaultMirror = fallbackMirrors[0];
-        setActiveStream(null);
-        showToast(`⚡ Auto-connected to ${defaultMirror.name}`, 'Verified High-Speed CDN');
+        if (selectedStream) {
+          setActiveStream(selectedStream);
+        } else if (list.length > 0) {
+          const ranked = [...list].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
+          const best = ranked[0];
+          setActiveStream(best);
+          showToast(
+            `✨ Auto-selected best stream: ${best.serverName || 'Ultra Pipeline'}`,
+            `${best.quality || '4K'} • ${best.fileSize || 'Ultra Bitrate'}`
+          );
+        } else {
+          const defaultMirror = fallbackMirrors[0];
+          setActiveStream(null);
+          showToast(`⚡ Auto-connected to ${defaultMirror.name}`, 'Verified High-Speed CDN');
+        }
       });
 
     return () => {
@@ -536,12 +502,24 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     }
   }, [isOpen, movie, activeStream]);
 
-  if (!isOpen || !movie) return null;
-
   const currentMovie = detailedMovie || movie;
-  const currentServerTitle = activeStream?.serverName || 'Refra Ultra CDN';
+  const currentServerTitle = activeStream?.serverName || 'PenguPlay';
   const currentQualityTitle = activeStream?.quality || '4K';
-  const currentStreamTags = activeStream ? getStreamOrderedTags(activeStream) : [];
+
+  const activeSpecBadges = useMemo(() => {
+    if (activeStream) {
+      return parseStreamSpecBadges(activeStream, 6);
+    }
+    return [
+      { id: 'res', label: currentQualityTitle || '4K', isBest: true },
+      { id: 'src', label: 'WEB-DL', isBest: false },
+      { id: 'hdr', label: 'HDR10+', isBest: true },
+      { id: '10b', label: '10bit', isBest: true },
+      { id: 'size', label: '8.95 GB', isBest: false },
+    ];
+  }, [activeStream, currentQualityTitle]);
+
+  if (!isOpen || !movie || !currentMovie) return null;
 
   return (
     <AnimatePresence>
@@ -646,42 +624,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           </header>
         )}
 
-        {/* ================= FLOATING TOAST NOTIFICATION ================= */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -24, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -16, scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 24 }}
-              className="fixed top-14 sm:top-16 left-1/2 -translate-x-1/2 z-[90] max-w-[92vw] sm:max-w-md w-full pointer-events-auto"
-            >
-              <div className="mx-auto px-4 py-2.5 rounded-2xl bg-[#141722]/95 backdrop-blur-2xl border border-emerald-500/30 shadow-2xl flex items-center justify-between gap-3 text-white">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-white truncate">{toastMessage.title}</div>
-                    {toastMessage.subtitle && (
-                      <div className="text-[11px] text-emerald-300/80 truncate font-mono">
-                        {toastMessage.subtitle}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setToastMessage(null)}
-                  className="p-1 rounded-full hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer shrink-0"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Toast notification removed per user request */}
 
         {/* ================= MAIN SCROLLABLE STREAMING PAGE CONTENT ================= */}
         <div
@@ -765,77 +708,81 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           {!isFullscreen && (
             <>
               {/* ================= 2. DROP-DOWN SERVER SELECTOR (BELOW VIDEO STAGE) ================= */}
+              {/* ================= 2. MAIN PILL (EXPANDS OPEN IN-PLACE TO SHOW AVAILABLE SERVERS) ================= */}
               <section className="space-y-2">
-                {/* Dropdown Trigger Card */}
-                <div className="relative">
-                  <button
-                    type="button"
+                <div className="w-full rounded-2xl bg-white/[0.06] border border-white/10 overflow-hidden shadow-lg backdrop-blur-xl transition-colors duration-200">
+                  {/* Dropdown Trigger Card */}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setIsDropdownOpen((prev) => !prev)}
-                    className="w-full p-3 sm:p-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.09] active:scale-[0.99] border border-white/10 transition-all cursor-pointer flex items-center justify-between gap-3 text-left shadow-lg backdrop-blur-xl"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setIsDropdownOpen((prev) => !prev);
+                      }
+                    }}
+                    className="w-full p-3 sm:p-3.5 flex items-center justify-between gap-2.5 text-left cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-colors select-none"
                   >
                     {/* Left: Server Icon & Details */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      {renderProviderLogo(currentServerTitle, activeStream?.serverLogo, 'w-12 h-12 sm:w-14 sm:h-14')}
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 pr-2">
+                      <ProviderLogo
+                        serverName={currentServerTitle}
+                        logoUrl={activeStream?.serverLogo}
+                        className="w-9 h-9 sm:w-10 sm:h-10 shrink-0"
+                      />
 
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs sm:text-sm font-bold text-white truncate">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate leading-snug">
                             {activeStream?.movieName || activeStream?.title || currentMovie.title}
-                          </span>
-                          <span className="text-[10px] text-emerald-300 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25">
-                            {currentQualityTitle}
-                          </span>
-                          {activeStream?.fileSize && (
-                            <span className="text-[10px] text-neutral-300 font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-                              {activeStream.fileSize}
-                            </span>
-                          )}
+                          </h3>
                         </div>
 
-                        {/* Stream Tags / Specs snippet */}
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          {currentStreamTags.slice(0, 4).map((tag) => (
+                        {/* Squircle pills with sharp curved edges and gap */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {activeSpecBadges.map((badge) => (
                             <span
-                              key={tag.id}
-                              className={`text-[9px] px-1.5 py-0.2 rounded-md ${tag.className}`}
+                              key={badge.id}
+                              className={`inline-flex items-center justify-center px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] select-none whitespace-nowrap ${
+                                badge.isBest
+                                  ? 'bg-white text-black font-bold border border-white shadow-xs'
+                                  : 'bg-transparent text-white font-medium border border-white/40'
+                              }`}
                             >
-                              {tag.label}
+                              {badge.label}
                             </span>
                           ))}
-                          {activeStream && (
-                            <span className="text-[10px] text-neutral-400 font-light truncate max-w-[200px] sm:max-w-md">
-                              {activeStream.specs || activeStream.name}
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>
 
                     {/* Right: Switch Server Action & Chevron */}
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="hidden sm:inline text-xs font-semibold text-emerald-400">
+                      <span className="hidden sm:inline text-xs font-semibold text-neutral-300">
                         {isDropdownOpen ? 'Close' : 'Switch Server'}
                       </span>
-                      <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-neutral-300">
+                      <div className="w-7 h-7 rounded-[6px] bg-white/10 flex items-center justify-center text-neutral-300">
                         {isDropdownOpen ? (
-                          <ChevronUp className="w-4 h-4" />
+                          <ChevronUp className="w-4 h-4 text-white" />
                         ) : (
-                          <ChevronDown className="w-4 h-4" />
+                          <ChevronDown className="w-4 h-4 text-white" />
                         )}
                       </div>
                     </div>
-                  </button>
+                  </div>
 
-                  {/* Expandable Dropdown Menu with Fluid Liquid Animation */}
-                  <AnimatePresence>
+                  {/* Expandable Dropdown Menu with Fluid Liquid Animation in-place */}
+                  <AnimatePresence initial={false}>
                     {isDropdownOpen && (
                       <motion.div
-                        initial={{ opacity: 0, y: -10, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                        transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-                        className="mt-2 w-full rounded-2xl bg-[#11131c]/95 border border-white/15 p-3 shadow-2xl backdrop-blur-2xl z-40 space-y-3"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        className="overflow-hidden border-t border-white/10"
                       >
+                        <div className="p-3 sm:p-3.5 space-y-3 bg-black/20">
                         {/* Header with Sources count and Filters toggle button */}
                         <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                           <div className="flex items-center gap-2">
@@ -845,7 +792,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                 {filteredStreams.length}
                               </span>
                             </div>
-                            <span className="hidden sm:inline-block text-[9px] font-bold text-emerald-300 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/25">
+                            <span className="hidden sm:inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-md bg-white/10 border border-white/15">
                               ★ Ranked by Best
                             </span>
                           </div>
@@ -861,14 +808,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                             }}
                             className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border active:scale-[0.96] ${
                               isFilterDropdownOpen || activeFilterCount > 0
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                ? 'bg-white/20 text-white border-white/40'
                                 : 'bg-white/5 text-neutral-300 hover:text-white border-white/10'
                             }`}
                           >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
                             <span>Filters</span>
                             {activeFilterCount > 0 && (
-                              <span className="w-4 h-4 rounded-full bg-emerald-400 text-black text-[10px] font-extrabold flex items-center justify-center">
+                              <span className="w-4 h-4 rounded-full bg-white text-black text-[10px] font-extrabold flex items-center justify-center">
                                 {activeFilterCount}
                               </span>
                             )}
@@ -892,25 +839,26 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                             >
                               {/* 1. Provider Filter */}
                               <div className="space-y-1.5">
-                                <div className="text-[11px] font-semibold text-neutral-400 flex items-center justify-between">
-                                  <span>Provider / Addon</span>
-                                  <span className="text-[10px] text-neutral-500">
+                                <div className="text-xs font-bold text-neutral-200 flex items-center justify-between">
+                                  <span className="font-bold">Provider / Addon</span>
+                                  <span className="text-[10px] font-bold text-neutral-400">
                                     {availableProviders.length} detected
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar py-1">
+                                <div className="flex items-center gap-2.5 overflow-x-auto hide-scrollbar py-1">
                                   <button
                                     type="button"
                                     onClick={() =>
                                       setPendingFilters((p) => ({ ...p, provider: 'All' }))
                                     }
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                                    className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex flex-col items-center justify-center shrink-0 min-w-[64px] border ${
                                       pendingFilters.provider === 'All'
-                                        ? 'bg-emerald-500/20 text-emerald-300 font-bold'
-                                        : 'text-neutral-400 hover:text-white'
+                                        ? 'bg-white/20 text-white font-bold border-white/35 shadow-sm'
+                                        : 'bg-white/5 text-neutral-300 hover:text-white font-bold border-white/10'
                                     }`}
                                   >
-                                    All ({streams.length})
+                                    <span className="font-bold">All</span>
+                                    <span className="text-[10px] font-bold text-neutral-400">({streams.length})</span>
                                   </button>
                                   {availableProviders.map(({ name, count }) => {
                                     const isSelected = pendingFilters.provider === name;
@@ -922,15 +870,21 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                           setPendingFilters((p) => ({ ...p, provider: name }))
                                         }
                                         title={`${name} (${count} streams)`}
-                                        className={`relative p-1 transition-all cursor-pointer flex flex-col items-center justify-center shrink-0 ${
+                                        className={`relative p-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center shrink-0 min-w-[76px] border active:scale-95 ${
                                           isSelected
-                                            ? 'scale-110 opacity-100 drop-shadow-[0_0_12px_rgba(16,185,129,0.5)]'
-                                            : 'opacity-70 hover:opacity-100 hover:scale-105'
+                                            ? 'bg-white/20 border-white/40 scale-105 opacity-100 shadow-md drop-shadow-[0_0_12px_rgba(255,255,255,0.25)]'
+                                            : 'bg-white/5 border-white/10 opacity-80 hover:opacity-100 hover:scale-102'
                                         }`}
                                       >
-                                        {renderProviderLogo(name, undefined, 'w-10 h-10 sm:w-11 sm:h-11')}
+                                        <ProviderLogo serverName={name} className="w-10 h-10 sm:w-11 sm:h-11" />
+                                        <span className={`text-[11px] font-bold mt-1.5 text-center truncate max-w-[80px] leading-tight ${isSelected ? 'text-white' : 'text-neutral-200'}`}>
+                                          {name}
+                                        </span>
+                                        <span className="text-[10px] font-bold text-neutral-400 mt-0.5">
+                                          ({count})
+                                        </span>
                                         {isSelected && (
-                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1 shadow-sm shadow-emerald-400" />
+                                          <span className="w-1.5 h-1.5 rounded-full bg-white mt-1 shadow-sm shadow-white" />
                                         )}
                                       </button>
                                     );
@@ -940,9 +894,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                               {/* 2. Quality Filter */}
                               <div className="space-y-1.5">
-                                <div className="text-[11px] font-semibold text-neutral-400 flex items-center justify-between">
-                                  <span>Resolution / Quality</span>
-                                  <span className="text-[10px] text-neutral-500">
+                                <div className="text-xs font-bold text-neutral-200 flex items-center justify-between">
+                                  <span className="font-bold">Resolution / Quality</span>
+                                  <span className="text-[10px] font-bold text-neutral-400">
                                     {availableQualities.length} detected
                                   </span>
                                 </div>
@@ -952,13 +906,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     onClick={() =>
                                       setPendingFilters((p) => ({ ...p, quality: 'All' }))
                                     }
-                                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                    className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                       pendingFilters.quality === 'All'
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                        : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                        ? 'bg-white/20 text-white border-white/40 font-bold'
+                                        : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                     }`}
                                   >
-                                    All ({streams.length})
+                                    <span className="font-bold">All</span>
+                                    <span className="ml-1 text-[10px] font-bold opacity-75">({streams.length})</span>
                                   </button>
                                   {availableQualities.map(({ quality, count }) => {
                                     const isSelected = pendingFilters.quality === quality;
@@ -969,14 +924,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                         onClick={() =>
                                           setPendingFilters((p) => ({ ...p, quality }))
                                         }
-                                        className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                        className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                           isSelected
-                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                            : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                            ? 'bg-white/20 text-white border-white/40 font-bold'
+                                            : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                         }`}
                                       >
-                                        <span>{quality}</span>
-                                        <span className="ml-1 text-[10px] opacity-60">
+                                        <span className="font-bold">{quality}</span>
+                                        <span className="ml-1 text-[10px] font-bold opacity-75">
                                           ({count})
                                         </span>
                                       </button>
@@ -987,12 +942,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                               {/* 3. Language Filter */}
                               <div className="space-y-1.5">
-                                <div className="text-[11px] font-semibold text-neutral-400 flex items-center justify-between">
-                                  <span className="flex items-center gap-1">
+                                <div className="text-xs font-bold text-neutral-200 flex items-center justify-between">
+                                  <span className="flex items-center gap-1 font-bold">
                                     <Languages className="w-3.5 h-3.5" />
-                                    <span>Audio Language</span>
+                                    <span className="font-bold">Audio Language</span>
                                   </span>
-                                  <span className="text-[10px] text-neutral-500">
+                                  <span className="text-[10px] font-bold text-neutral-400">
                                     {availableLanguages.length} detected
                                   </span>
                                 </div>
@@ -1002,13 +957,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     onClick={() =>
                                       setPendingFilters((p) => ({ ...p, language: 'All' }))
                                     }
-                                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                    className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                       pendingFilters.language === 'All'
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                        : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                        ? 'bg-white/20 text-white border-white/40 font-bold'
+                                        : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                     }`}
                                   >
-                                    All ({streams.length})
+                                    <span className="font-bold">All</span>
+                                    <span className="ml-1 text-[10px] font-bold opacity-75">({streams.length})</span>
                                   </button>
                                   {availableLanguages.map(({ language, count }) => {
                                     const isSelected = pendingFilters.language === language;
@@ -1019,14 +975,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                         onClick={() =>
                                           setPendingFilters((p) => ({ ...p, language }))
                                         }
-                                        className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                        className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                           isSelected
-                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                            : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                            ? 'bg-white/20 text-white border-white/40 font-bold'
+                                            : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                         }`}
                                       >
-                                        <span>{language}</span>
-                                        <span className="ml-1 text-[10px] opacity-60">
+                                        <span className="font-bold">{language}</span>
+                                        <span className="ml-1 text-[10px] font-bold opacity-75">
                                           ({count})
                                         </span>
                                       </button>
@@ -1037,10 +993,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                               {/* 4. Size Filter */}
                               <div className="space-y-1.5">
-                                <div className="text-[11px] font-semibold text-neutral-400 flex items-center justify-between">
-                                  <span className="flex items-center gap-1">
+                                <div className="text-xs font-bold text-neutral-200 flex items-center justify-between">
+                                  <span className="flex items-center gap-1 font-bold">
                                     <HardDrive className="w-3.5 h-3.5" />
-                                    <span>File Size</span>
+                                    <span className="font-bold">File Size</span>
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar py-0.5">
@@ -1049,13 +1005,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     onClick={() =>
                                       setPendingFilters((p) => ({ ...p, sizeRange: 'All' }))
                                     }
-                                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                    className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                       pendingFilters.sizeRange === 'All'
-                                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                        : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                        ? 'bg-white/20 text-white border-white/40 font-bold'
+                                        : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                     }`}
                                   >
-                                    All ({streams.length})
+                                    <span className="font-bold">All</span>
+                                    <span className="ml-1 text-[10px] font-bold opacity-75">({streams.length})</span>
                                   </button>
                                   {availableSizeRanges.map(({ id, label, count }) => {
                                     const isSelected = pendingFilters.sizeRange === id;
@@ -1066,14 +1023,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                         onClick={() =>
                                           setPendingFilters((p) => ({ ...p, sizeRange: id }))
                                         }
-                                        className={`px-2.5 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                                        className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
                                           isSelected
-                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                            : 'bg-white/5 text-neutral-400 hover:text-white border-white/5'
+                                            ? 'bg-white/20 text-white border-white/40 font-bold'
+                                            : 'bg-white/5 text-neutral-300 hover:text-white border-white/10 font-bold'
                                         }`}
                                       >
-                                        <span>{label}</span>
-                                        <span className="ml-1 text-[10px] opacity-60">
+                                        <span className="font-bold">{label}</span>
+                                        <span className="ml-1 text-[10px] font-bold opacity-75">
                                           ({count})
                                         </span>
                                       </button>
@@ -1109,7 +1066,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                       );
                                     }
                                   }}
-                                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.97] transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
+                                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-white text-black hover:bg-neutral-200 active:scale-[0.97] transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
                                 >
                                   {pendingMatchCount > 0 ? (
                                     <>
@@ -1133,61 +1090,61 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                           <div className="flex items-center gap-1.5 flex-wrap py-1 text-[11px]">
                             <span className="text-neutral-500 font-medium">Active:</span>
                             {appliedFilters.provider !== 'All' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                                {renderProviderLogo(appliedFilters.provider, 'w-3.5 h-3.5')}
-                                <span>{appliedFilters.provider}</span>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-white/10 border border-white/20 text-neutral-100 font-bold">
+                                <ProviderLogo serverName={appliedFilters.provider} className="w-3.5 h-3.5" />
+                                <span className="font-bold">{appliedFilters.provider}</span>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setAppliedFilters((f) => ({ ...f, provider: 'All' }));
                                     setPendingFilters((f) => ({ ...f, provider: 'All' }));
                                   }}
-                                  className="hover:text-white ml-0.5 cursor-pointer"
+                                  className="hover:text-white ml-0.5 cursor-pointer font-bold"
                                 >
                                   ×
                                 </button>
                               </span>
                             )}
                             {appliedFilters.quality !== 'All' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                                <span>Quality: {appliedFilters.quality}</span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-white/10 border border-white/20 text-neutral-100 font-bold">
+                                <span className="font-bold">Quality: {appliedFilters.quality}</span>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setAppliedFilters((f) => ({ ...f, quality: 'All' }));
                                     setPendingFilters((f) => ({ ...f, quality: 'All' }));
                                   }}
-                                  className="hover:text-white ml-0.5 cursor-pointer"
+                                  className="hover:text-white ml-0.5 cursor-pointer font-bold"
                                 >
                                   ×
                                 </button>
                               </span>
                             )}
                             {appliedFilters.language !== 'All' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                                <span>Audio: {appliedFilters.language}</span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-white/10 border border-white/20 text-neutral-100 font-bold">
+                                <span className="font-bold">Audio: {appliedFilters.language}</span>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setAppliedFilters((f) => ({ ...f, language: 'All' }));
                                     setPendingFilters((f) => ({ ...f, language: 'All' }));
                                   }}
-                                  className="hover:text-white ml-0.5 cursor-pointer"
+                                  className="hover:text-white ml-0.5 cursor-pointer font-bold"
                                 >
                                   ×
                                 </button>
                               </span>
                             )}
                             {appliedFilters.sizeRange !== 'All' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
-                                <span>Size: {appliedFilters.sizeRange}</span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-white/10 border border-white/20 text-neutral-100 font-bold">
+                                <span className="font-bold">Size: {appliedFilters.sizeRange}</span>
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setAppliedFilters((f) => ({ ...f, sizeRange: 'All' }));
                                     setPendingFilters((f) => ({ ...f, sizeRange: 'All' }));
                                   }}
-                                  className="hover:text-white ml-0.5 cursor-pointer"
+                                  className="hover:text-white ml-0.5 cursor-pointer font-bold"
                                 >
                                   ×
                                 </button>
@@ -1210,7 +1167,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         <div className="max-h-80 overflow-y-auto hide-scrollbar space-y-2 pr-1">
                           {isLoadingStreams ? (
                             <div className="py-8 text-center text-xs text-neutral-400 flex flex-col items-center gap-2">
-                              <div className="w-5 h-5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               <span>Loading server streams...</span>
                             </div>
                           ) : filteredStreams.length > 0 ? (
@@ -1221,92 +1178,82 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                 : activeStream?.name === s.name &&
                                   activeStream?.serverName === s.serverName &&
                                   activeStream?.fileSize === s.fileSize;
-                              const tags = getStreamOrderedTags(s);
-                              const isTopBest = idx === 0 && activeFilterCount === 0;
+
+                              const specBadges = parseStreamSpecBadges(s, 6);
 
                               return (
-                                <button
+                                <div
                                   key={s.id || `${s.name}_${idx}`}
-                                  type="button"
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() => {
                                     setActiveStream(s);
                                     setIsDropdownOpen(false);
                                     showToast(
-                                      `✨ Connected: ${s.quality || '4K'} Stream`,
-                                      `${s.fileSize || 'Ultra High Definition'} • ${s.specs || ''}`
+                                      `Connected: ${s.quality || '4K'} Stream`,
+                                      `${s.fileSize || 'UHD'} • ${s.specs || ''}`
                                     );
                                   }}
-                                  className={`w-full p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 active:scale-[0.99] relative overflow-hidden ${
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      setActiveStream(s);
+                                      setIsDropdownOpen(false);
+                                    }
+                                  }}
+                                  className={`w-full p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 active:scale-[0.99] relative overflow-hidden select-none ${
                                     isSelected
-                                      ? 'bg-emerald-500/15 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
-                                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10'
+                                      ? 'bg-white/10 border-white/40 shadow-lg shadow-black/40'
+                                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10'
                                   }`}
                                 >
-                                  {/* Left Details: BIG Movie Name and Specs Badges */}
-                                  <div className="min-w-0 flex-1 space-y-1.5">
+                                  {/* Left Details: BIG Movie Name and Squircle Specs Badges (min-w-0 flex-1 pr-2 prevents overlapping) */}
+                                  <div className="min-w-0 flex-1 pr-2 space-y-1.5">
                                     <div className="flex items-center gap-2">
-                                      <h4 className="text-sm sm:text-base font-bold text-white tracking-tight truncate leading-snug">
+                                      <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate leading-snug">
                                         {s.movieName || s.title || currentMovie.title}
                                       </h4>
-                                      {isTopBest && (
-                                        <span className="text-[9px] font-bold text-emerald-300 px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/30 shrink-0">
-                                          ★ BEST
-                                        </span>
-                                      )}
                                     </div>
 
-                                    {/* Badges: Quality, Source, HDR/Vision, Audio, Size, Languages, Subtitles */}
+                                    {/* Specs Badges: Sharp curved edges (rounded-[4px]), full white back for best, gap in between */}
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      {tags.map((t) => (
+                                      {specBadges.map((badge) => (
                                         <span
-                                          key={t.id}
-                                          className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-md font-medium ${t.className}`}
+                                          key={badge.id}
+                                          className={`inline-flex items-center justify-center px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] select-none whitespace-nowrap ${
+                                            badge.isBest
+                                              ? 'bg-white text-black font-bold border border-white shadow-xs'
+                                              : 'bg-transparent text-white font-medium border border-white/40'
+                                          }`}
                                         >
-                                          {t.label}
+                                          {badge.label}
                                         </span>
                                       ))}
-                                      {s.languages && s.languages.length > 0 && (
-                                        <span className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/25 text-blue-300 flex items-center gap-1 font-medium">
-                                          <span>🎧</span>
-                                          <span>Audio: {s.languages.join(', ')}</span>
-                                        </span>
-                                      )}
-                                      {/* Subtitles: always prominently include English subtitles */}
-                                      <span className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/25 text-purple-300 flex items-center gap-1 font-medium">
-                                        <span>💬</span>
-                                        <span className="truncate max-w-[180px]">Subtitles: {s.subtitlesText || 'English'}</span>
-                                      </span>
                                     </div>
 
-                                    {/* Specs & Source Host line */}
-                                    <div className="flex items-center gap-2 text-[11px] text-neutral-400 font-light truncate">
-                                      {s.specs && <span>{s.specs}</span>}
-                                      {s.sourceHost && (
-                                        <>
-                                          <span className="text-neutral-600">•</span>
-                                          <span className="text-neutral-300">Source: {s.sourceHost}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Right side: Scaled-up Provider Logo (No borders, No pill, No name) & Selection Indicator */}
-                                  <div className="shrink-0 flex items-center gap-3">
-                                    {/* Branded provider logo - big & crisp, no border, no pill, no name */}
-                                    {renderProviderLogo(s.serverName, s.serverLogo, 'w-14 h-14 sm:w-16 sm:h-16')}
-
-                                    {/* Selected / Play indicator */}
-                                    {isSelected ? (
-                                      <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0">
-                                        <Check className="w-4 h-4 stroke-[3]" />
-                                      </div>
-                                    ) : (
-                                      <div className="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500 hover:text-white shrink-0">
-                                        <Play className="w-3 h-3 fill-current ml-0.5" />
+                                    {/* Optional Source Host */}
+                                    {s.sourceHost && (
+                                      <div className="text-[10px] sm:text-[11px] text-neutral-400 font-light truncate">
+                                        <span>Source: {s.sourceHost}</span>
                                       </div>
                                     )}
                                   </div>
-                                </button>
+
+                                  {/* Right side: Provider Logo & Selection Checkmark ONLY (NO play icon) */}
+                                  <div className="shrink-0 flex items-center gap-2">
+                                    <ProviderLogo
+                                      serverName={s.serverName}
+                                      logoUrl={s.serverLogo}
+                                      className="w-9 h-9 sm:w-10 sm:h-10 shrink-0"
+                                    />
+
+                                    {isSelected && (
+                                      <div className="w-6 h-6 rounded-[5px] bg-white text-black flex items-center justify-center font-bold shrink-0 shadow-md">
+                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               );
                             })
                           ) : (
@@ -1327,7 +1274,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                       serverName: srv.name,
                                     });
                                     setIsDropdownOpen(false);
-                                    showToast(`✨ Connected to ${srv.name}`, 'Verified High-Speed CDN');
+                                    showToast(`Connected to ${srv.name}`, 'Verified High-Speed CDN');
                                   }}
                                   className="w-full p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-left transition-all cursor-pointer flex items-center justify-between"
                                 >
@@ -1335,13 +1282,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     <div className="text-xs font-bold text-white">{srv.name}</div>
                                     <div className="text-[10px] text-neutral-400">{srv.tag}</div>
                                   </div>
-                                  <span className="text-[10px] text-emerald-400 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 font-bold">
+                                  <span className="text-[10px] text-white px-2 py-0.5 rounded-[4px] bg-white/10 border border-white/15 font-bold">
                                     {srv.quality}
                                   </span>
                                 </button>
                               ))}
                             </div>
                           )}
+                        </div>
                         </div>
                       </motion.div>
                     )}
