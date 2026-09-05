@@ -4,7 +4,7 @@ import { Movie, CategoryFilter } from '../types';
 
 interface ExploreViewProps {
   movies: Movie[];
-  onSelectMovie: (movie: Movie) => void;
+  onSelectMovie: (movie: Movie, originRect?: DOMRect) => void;
   onSelectCategory: (cat: CategoryFilter) => void;
 }
 

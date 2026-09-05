@@ -32,9 +32,41 @@
   --badge-border: rgba(255, 255, 255, 0.25);
 }
 
+html, body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar, body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 body {
   font-family: var(--font-family-current);
   transition: background-color 0.4s ease-out;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 120Hz / ProMotion Display Compositor Acceleration */
+.gpu-layer {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+button, [role="button"], a {
+  touch-action: manipulation;
+}
+
+.scroll-smooth-touch {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-x: contain;
 }
 
 .font-panchange {
@@ -59,31 +91,28 @@ body {
   .liquid-glass {
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     backdrop-filter: blur(20px) saturate(180%);
-    backdrop-filter: url("#liquid-glass") blur(3px) saturate(180%);
     background-color: var(--glass-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.36);
-    transition: background-color 0.35s ease, border-color 0.35s ease;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
   }
 
   .liquid-glass-subtle {
     -webkit-backdrop-filter: blur(16px) saturate(160%);
     backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: url("#liquid-glass-subtle") blur(2px) saturate(160%);
     background-color: var(--glass-subtle-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-    transition: background-color 0.35s ease, border-color 0.35s ease;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
   }
 
   .liquid-glass-pill {
     -webkit-backdrop-filter: blur(20px) saturate(175%);
     backdrop-filter: blur(20px) saturate(175%);
-    backdrop-filter: url("#liquid-glass-subtle") blur(3px) saturate(175%);
     background-color: var(--glass-pill-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-    transition: background-color 0.35s ease, border-color 0.35s ease;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
   }
 
   /* Universal backdrop-blur utilities ensuring -webkit prefix works on Safari / iOS / mobile WebKit */

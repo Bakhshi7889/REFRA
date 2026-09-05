@@ -4,6 +4,8 @@ import { HeroSpotlight } from './components/HeroSpotlight';
 import { ContinueWatching } from './components/ContinueWatching';
 import { MovieRow } from './components/MovieRow';
 import { MovieDetailsModal } from './components/MovieDetailsModal';
+import { VideoPlayerModal } from './components/VideoPlayerModal';
+import { StreamServerSelectorModal } from './components/StreamServerSelectorModal';
 import { BottomNav } from './components/BottomNav';
 import { WatchlistView } from './components/WatchlistView';
 import { ExploreView } from './components/ExploreView';
@@ -19,7 +21,7 @@ import {
   fetchThrillersMovies,
   searchMovies,
 } from './services/movieApi';
-import { Movie, CategoryFilter, NavTab } from './types';
+import { Movie, CategoryFilter, NavTab, ExpansionOrigin, StreamItem } from './types';
 import { Search, Star, Loader2, Plus, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getPosterUrl } from './utils/imageHelpers';
@@ -94,7 +96,13 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
+  const [expansionOrigin, setExpansionOrigin] = useState<ExpansionOrigin | null>(null);
+  const [playingMovie, setPlayingMovie] = useState<Movie | null>(null);
+  const [playingEpisodeIndex, setPlayingEpisodeIndex] = useState<number>(0);
   const [autoPlayDetails, setAutoPlayDetails] = useState(false);
+  const [serverSelectorMovie, setServerSelectorMovie] = useState<Movie | null>(null);
+  const [serverSelectorEpisodeIndex, setServerSelectorEpisodeIndex] = useState<number>(0);
+  const [selectedStream, setSelectedStream] = useState<StreamItem | null>(null);
 
   // Dynamic UI Theme & Background State
   const [themeConfig, setThemeConfig] = useState<UiThemeConfig>(DEFAULT_THEME_CONFIG);
@@ -162,6 +170,11 @@ export default function App() {
     let isMounted = true;
 
     async function loadData() {
+      // If valid 6-hour cache is already loaded, skip redundant API fetch & heavy JSON compute
+      if (cachedData && cachedData.trendingMovies && cachedData.trendingMovies.length > 0) {
+        return;
+      }
+
       try {
         const [spotlights, trending, anime, topRated, scifi, action, thrillers] = await Promise.all([
           fetchSpotlightMovies(),
@@ -306,33 +319,74 @@ export default function App() {
     trackWatchlistAction(movieId, movieItem?.title || movieId, isAdding ? 'add' : 'remove');
   };
 
-  const handlePlayMovie = (movie: Movie) => {
-    // Record into IndexedDB history
-    saveIndexedDbHistoryItem({
-      id: `hist_${movie.id}`,
-      movieId: movie.id,
-      title: movie.title,
-      posterUrl: movie.posterUrl,
-      backdropUrl: movie.backdropUrl,
-      progressPercent: 12,
-      durationString: movie.duration,
-      lastWatchedTimestamp: Date.now(),
-    });
-
-    // Scrobble to Trakt if connected
-    scrobbleToTrakt(movie.title, 12, 'start');
-
-    trackStreamStart({
-      id: movie.id,
-      title: movie.title,
-      isAnime: movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime'),
-    });
-
-    setAutoPlayDetails(true);
-    setSelectedMovie(movie);
+  const handlePlayMovie = (movie: Movie, episodeIndex: number = 0) => {
+    // Open the dedicated streaming page directly, which auto-selects the best stream with a toast
+    setSelectedMovie(null);
+    setServerSelectorMovie(null);
+    setSelectedStream(null);
+    setPlayingEpisodeIndex(episodeIndex);
+    setPlayingMovie(movie);
   };
 
-  const handleOpenDetails = (movie: Movie) => {
+  const handleStreamSelect = (stream: StreamItem, episodeIdx?: number) => {
+    const movieToPlay = serverSelectorMovie || selectedMovie;
+    setSelectedMovie(null);
+    setServerSelectorMovie(null);
+    setSelectedStream(stream);
+
+    if (movieToPlay) {
+      // Record into IndexedDB history
+      saveIndexedDbHistoryItem({
+        id: `hist_${movieToPlay.id}`,
+        movieId: movieToPlay.id,
+        title: movieToPlay.title,
+        posterUrl: movieToPlay.posterUrl,
+        backdropUrl: movieToPlay.backdropUrl,
+        progressPercent: movieToPlay.progress?.percentage || 5,
+        durationString: movieToPlay.duration,
+        lastWatchedTimestamp: Date.now(),
+      });
+
+      // Scrobble to Trakt if connected
+      scrobbleToTrakt(movieToPlay.title, movieToPlay.progress?.percentage || 5, 'start');
+
+      trackStreamStart({
+        id: movieToPlay.id,
+        title: movieToPlay.title,
+        sourceServer: stream.serverName,
+        isAnime: movieToPlay.genres.includes('Animation') || movieToPlay.badge?.toLowerCase().includes('anime'),
+      });
+
+      setPlayingMovie(movieToPlay);
+    }
+    setServerSelectorMovie(null);
+  };
+
+  const handleStreamProgressUpdate = (movieId: string, progressPercent: number, timeLeft: string) => {
+    const updater = (prevList: Movie[]) =>
+      prevList.map((m) =>
+        m.id === movieId
+          ? {
+              ...m,
+              progress: {
+                percentage: progressPercent,
+                timeLeft,
+                lastWatched: 'Just now',
+              },
+            }
+          : m
+      );
+
+    setSpotlightMovies(updater);
+    setTrendingMovies(updater);
+    setAnimeMovies(updater);
+    setTopRatedMovies(updater);
+    setScifiMovies(updater);
+    setActionMovies(updater);
+    setThrillerMovies(updater);
+  };
+
+  const handleOpenDetails = (movie: Movie, origin?: DOMRect | ExpansionOrigin) => {
     trackMediaView({
       id: movie.id,
       title: movie.title,
@@ -341,6 +395,27 @@ export default function App() {
       releaseYear: movie.releaseYear,
     });
     setAutoPlayDetails(false);
+    if (origin) {
+      if ('left' in origin && 'top' in origin) {
+        setExpansionOrigin({
+          x: origin.left + origin.width / 2,
+          y: origin.top + origin.height / 2,
+          width: origin.width,
+          height: origin.height,
+          top: origin.top,
+          left: origin.left,
+        });
+      } else {
+        const exp = origin as ExpansionOrigin;
+        setExpansionOrigin({
+          ...exp,
+          top: exp.top ?? (exp.y - exp.height / 2),
+          left: exp.left ?? (exp.x - exp.width / 2),
+        });
+      }
+    } else {
+      setExpansionOrigin(null);
+    }
     setSelectedMovie(movie);
   };
 
@@ -383,7 +458,7 @@ export default function App() {
       {/* Universal Screen Container: Fluid on Mobile, Centered on PC */}
       <main
         id="refra-app-root"
-        className="w-full max-w-md sm:max-w-xl md:max-w-2xl transition-all relative flex flex-col min-h-screen z-10"
+        className="w-full max-w-md sm:max-w-xl md:max-w-2xl relative flex flex-col min-h-screen z-10"
         style={{
           backgroundColor: isCustomImageActive ? 'transparent' : activeBgColor,
         }}
@@ -393,93 +468,93 @@ export default function App() {
 
         {/* Tab View Content */}
         <div className="flex-1 pb-28 pt-1">
-          {activeTab === 'home' && (
-            <>
-              {/* Hero Premiere Spotlight Carousel (3s art cycle, 15s movie switch, swipe gestures) */}
-              {spotlightMovies.length > 0 && (
-                <HeroSpotlight
-                  movies={spotlightMovies}
-                  onPlay={handlePlayMovie}
-                  onOpenDetails={handleOpenDetails}
-                  watchlist={watchlist}
-                  onToggleWatchlist={toggleWatchlist}
-                />
-              )}
-
-              {/* Continue Watching Section */}
-              <ContinueWatching
+          {/* Home Tab View: Kept mounted in background to ensure 0ms instant tab switching with zero lag */}
+          <div className={activeTab === 'home' ? 'block' : 'hidden'}>
+            {/* Hero Premiere Spotlight Carousel (3s art cycle, 15s movie switch, swipe gestures) */}
+            {spotlightMovies.length > 0 && (
+              <HeroSpotlight
                 movies={spotlightMovies}
-                onResume={handlePlayMovie}
+                onPlay={handlePlayMovie}
                 onOpenDetails={handleOpenDetails}
-              />
-
-              {/* 1st Divider: Trending Masterworks */}
-              <MovieRow
-                title="Trending Masterworks"
-                movies={trendingMovies}
-                onMovieClick={handleOpenDetails}
                 watchlist={watchlist}
                 onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
+                isActive={activeTab === 'home'}
               />
+            )}
 
-              {/* 2nd Divider: Trending Anime */}
-              <MovieRow
-                title="Trending Anime"
-                movies={animeMovies}
-                onMovieClick={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
-              />
+            {/* Continue Watching Section */}
+            <ContinueWatching
+              movies={spotlightMovies}
+              onResume={handlePlayMovie}
+              onOpenDetails={handleOpenDetails}
+            />
 
-              {/* 3rd Divider: Top Rated Cinema */}
-              <MovieRow
-                title="Top Rated Cinema"
-                movies={topRatedMovies}
-                onMovieClick={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
-              />
+            {/* 1st Divider: Trending Masterworks */}
+            <MovieRow
+              title="Trending Masterworks"
+              movies={trendingMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
 
-              {/* 4th Divider: Sci-Fi & Speculative Fiction */}
-              <MovieRow
-                title="Sci-Fi & Speculative Fiction"
-                movies={scifiMovies}
-                onMovieClick={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
-              />
+            {/* 2nd Divider: Trending Anime */}
+            <MovieRow
+              title="Trending Anime"
+              movies={animeMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
 
-              {/* 5th Divider: Action & Adrenaline */}
-              <MovieRow
-                title="Action & Adrenaline"
-                movies={actionMovies}
-                onMovieClick={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
-              />
+            {/* 3rd Divider: Top Rated Cinema */}
+            <MovieRow
+              title="Top Rated Cinema"
+              movies={topRatedMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
 
-              {/* 6th Divider: Psychological Thrillers */}
-              <MovieRow
-                title="Psychological Thrillers"
-                movies={thrillerMovies}
-                onMovieClick={handleOpenDetails}
-                watchlist={watchlist}
-                onToggleWatchlist={toggleWatchlist}
-                onPlayMovie={handlePlayMovie}
-                showDivider={true}
-              />
-            </>
-          )}
+            {/* 4th Divider: Sci-Fi & Speculative Fiction */}
+            <MovieRow
+              title="Sci-Fi & Speculative Fiction"
+              movies={scifiMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
+
+            {/* 5th Divider: Action & Adrenaline */}
+            <MovieRow
+              title="Action & Adrenaline"
+              movies={actionMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
+
+            {/* 6th Divider: Psychological Thrillers */}
+            <MovieRow
+              title="Psychological Thrillers"
+              movies={thrillerMovies}
+              onMovieClick={handleOpenDetails}
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onPlayMovie={handlePlayMovie}
+              showDivider={true}
+            />
+          </div>
 
           {activeTab === 'explore' && (
             <ExploreView
@@ -551,9 +626,10 @@ export default function App() {
                         return (
                           <motion.div
                             key={movie.id}
-                            whileTap={{ scale: 0.96 }}
-                            onClick={() => handleOpenDetails(movie)}
-                            className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg"
+                            whileTap={{ scale: 0.94 }}
+                            transition={{ type: 'spring', stiffness: 350, damping: 22, mass: 0.7 }}
+                            onClick={(e) => handleOpenDetails(movie, e.currentTarget.getBoundingClientRect())}
+                            className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer will-change-transform"
                           >
                             <img
                               src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
@@ -629,8 +705,12 @@ export default function App() {
         <BottomNav
           activeTab={activeTab}
           onTabChange={(tab) => {
-            setActiveTab(tab);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            if (tab === activeTab) {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+              setActiveTab(tab);
+              window.scrollTo(0, 0);
+            }
           }}
           watchlistCount={watchlist.length}
         />
@@ -638,10 +718,40 @@ export default function App() {
         {/* Liquid Organic Movie Details Sheet */}
         <MovieDetailsModal
           movie={selectedMovie}
+          expansionOrigin={expansionOrigin}
           onClose={() => setSelectedMovie(null)}
           watchlist={watchlist}
           onToggleWatchlist={toggleWatchlist}
           autoPlay={autoPlayDetails}
+          onPlayMovie={handlePlayMovie}
+        />
+
+        {/* Stremio Addons Server Hub (PenguPlay, Torrentio, Comet, AIOStreams, Nuvio) */}
+        <StreamServerSelectorModal
+          movie={serverSelectorMovie}
+          isOpen={Boolean(serverSelectorMovie)}
+          onClose={() => setServerSelectorMovie(null)}
+          onSelectStream={handleStreamSelect}
+          episodeIndex={serverSelectorEpisodeIndex}
+          expansionOrigin={expansionOrigin}
+        />
+
+        {/* Full Cinematic Video Player & Floating Liquid Glass PiP */}
+        <VideoPlayerModal
+          movie={playingMovie}
+          isOpen={Boolean(playingMovie)}
+          onClose={() => {
+            setPlayingMovie(null);
+            setSelectedStream(null);
+          }}
+          onProgressUpdate={handleStreamProgressUpdate}
+          selectedStream={selectedStream}
+          initialEpisodeIndex={playingEpisodeIndex}
+          onOpenServerSelector={() => {
+            if (playingMovie) {
+              setServerSelectorMovie(playingMovie);
+            }
+          }}
         />
       </main>
     </div>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Star, Plus, Check } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Star, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
@@ -9,7 +9,7 @@ interface MovieRowProps {
   subtitle?: string;
   badge?: string;
   movies: Movie[];
-  onMovieClick: (movie: Movie) => void;
+  onMovieClick: (movie: Movie, originRect?: DOMRect) => void;
   watchlist: string[];
   onToggleWatchlist: (movieId: string) => void;
   onPlayMovie?: (movie: Movie) => void;
@@ -24,24 +24,109 @@ export const MovieRow: React.FC<MovieRowProps> = ({
   onToggleWatchlist,
   showDivider = true,
 }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isMouseDownRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftStartRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
   if (movies.length === 0) return null;
 
+  const updateScrollButtons = () => {
+    if (!scrollRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setCanScrollLeft(scrollLeft > 10);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  useEffect(() => {
+    updateScrollButtons();
+  }, [movies]);
+
+  // Mouse Drag-to-scroll
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !scrollRef.current) return;
+    isMouseDownRef.current = true;
+    startXRef.current = e.pageX;
+    scrollLeftStartRef.current = scrollRef.current.scrollLeft;
+    isDraggingRef.current = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDownRef.current || !scrollRef.current) return;
+    const dx = e.pageX - startXRef.current;
+    if (Math.abs(dx) > 5) {
+      isDraggingRef.current = true;
+    }
+    scrollRef.current.scrollLeft = scrollLeftStartRef.current - dx;
+    updateScrollButtons();
+  };
+
+  const handleMouseUp = () => {
+    isMouseDownRef.current = false;
+    if (isDraggingRef.current) {
+      setTimeout(() => {
+        isDraggingRef.current = false;
+      }, 80);
+    }
+  };
+
+  const scrollByAmount = (amount: number) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+      setTimeout(updateScrollButtons, 300);
+    }
+  };
+
   return (
-    <section className="w-full px-4 pt-4 pb-2" aria-label={title}>
+    <section className="w-full px-4 pt-4 pb-2 relative group/section" aria-label={title}>
       {/* Subtle Section Divider */}
       {showDivider && (
         <div className="w-full h-px bg-white/[0.06] mb-3.5" />
       )}
 
-      {/* Row Header - Minimalist, no clutter tags or count badges */}
+      {/* Row Header */}
       <div className="flex items-center justify-between mb-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
           {title}
         </h3>
+        
+        {/* Desktop Quick Nav Buttons */}
+        <div className="hidden sm:flex items-center gap-1.5 opacity-0 group-hover/section:opacity-100 transition-opacity duration-200">
+          <button
+            type="button"
+            disabled={!canScrollLeft}
+            onClick={() => scrollByAmount(-350)}
+            className="p-1.5 rounded-full bg-[#181a24] hover:bg-[#232738] disabled:opacity-30 disabled:pointer-events-none text-neutral-300 transition-colors cursor-pointer"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={!canScrollRight}
+            onClick={() => scrollByAmount(350)}
+            className="p-1.5 rounded-full bg-[#181a24] hover:bg-[#232738] disabled:opacity-30 disabled:pointer-events-none text-neutral-300 transition-colors cursor-pointer"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      {/* Posters Snap Carousel */}
-      <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x">
+      {/* Posters Carousel with Drag-to-Scroll and Touch Support */}
+      <div
+        ref={scrollRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onScroll={updateScrollButtons}
+        className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+      >
         {movies.map((movie) => {
           const isSaved = watchlist.includes(movie.id);
 
@@ -49,7 +134,11 @@ export const MovieRow: React.FC<MovieRowProps> = ({
             <motion.div
               key={movie.id}
               whileTap={{ scale: 0.96 }}
-              onClick={() => onMovieClick(movie)}
+              transition={{ duration: 0.08, ease: 'easeOut' }}
+              onClick={(e) => {
+                if (isDraggingRef.current) return;
+                onMovieClick(movie, e.currentTarget.getBoundingClientRect());
+              }}
               className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
             >
               {/* Full Poster Image */}
@@ -58,17 +147,18 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 alt={movie.title}
                 referrerPolicy="no-referrer"
                 loading="lazy"
+                draggable={false}
                 onError={(e) => handleImageError(e, false)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
               />
 
-              {/* Seamless Canvas Gradient Overlay (Directly on canvas) */}
+              {/* Seamless Canvas Gradient Overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
 
               {/* Top Bookmark Action Pill */}
               <motion.button
-                whileTap={{ scale: 0.8 }}
+                whileTap={{ scale: 0.82 }}
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -95,7 +185,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 </motion.div>
               </motion.button>
 
-              {/* ALL TEXT DIRECTLY ON CANVAS (NO SEPARATE NESTED BLACK BOX, NO QUALITY TAG) */}
+              {/* Text Directly On Canvas */}
               <div className="absolute inset-x-0 bottom-0 p-2.5 z-10 flex flex-col gap-0.5 pointer-events-none">
                 <h4 className="text-xs font-semibold text-white truncate leading-tight drop-shadow-sm">
                   {movie.title}

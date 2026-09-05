@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Plus, Check, Info, Star, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
@@ -7,9 +7,10 @@ import { getPosterUrl, getBackdropUrl, handleImageError } from '../utils/imageHe
 interface HeroSpotlightProps {
   movies: Movie[];
   onPlay: (movie: Movie) => void;
-  onOpenDetails: (movie: Movie) => void;
+  onOpenDetails: (movie: Movie, origin?: DOMRect) => void;
   watchlist: string[];
   onToggleWatchlist: (movieId: string) => void;
+  isActive?: boolean;
 }
 
 export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
@@ -18,10 +19,16 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   onOpenDetails,
   watchlist,
   onToggleWatchlist,
+  isActive = true,
 }) => {
-  const spotlightMovies = movies.filter((m) => m.spotlight || m.featured).slice(0, 6);
+  const spotlightMovies = useMemo(
+    () => movies.filter((m) => m.spotlight || m.featured).slice(0, 6),
+    [movies]
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeBackdropIdx, setActiveBackdropIdx] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth < 640;
@@ -41,17 +48,21 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const isSaved = watchlist.includes(activeMovie?.id);
 
   // Responsive images: portrait for mobile (2:3), landscape for PC/desktop (16:9)
-  const portraitImages = (activeMovie?.posters && activeMovie.posters.length > 0)
-    ? activeMovie.posters.map((p) => getPosterUrl(p, 'w780', activeMovie.backdropUrl))
-    : [getPosterUrl(activeMovie?.posterUrl, 'w780', activeMovie?.backdropUrl)].filter(Boolean);
+  const portraitImages = useMemo(() => {
+    return (activeMovie?.posters && activeMovie.posters.length > 0)
+      ? activeMovie.posters.map((p) => getPosterUrl(p, 'w780', activeMovie.backdropUrl))
+      : [getPosterUrl(activeMovie?.posterUrl, 'w780', activeMovie?.backdropUrl)].filter(Boolean);
+  }, [activeMovie]);
 
-  const landscapeImages = [
-    activeMovie?.backdropUrl,
-    ...(activeMovie?.backdrops || []),
-    ...(activeMovie?.fanart || []),
-  ]
-    .filter(Boolean)
-    .map((b) => getBackdropUrl(b, 'w1280', activeMovie?.posterUrl));
+  const landscapeImages = useMemo(() => {
+    return [
+      activeMovie?.backdropUrl,
+      ...(activeMovie?.backdrops || []),
+      ...(activeMovie?.fanart || []),
+    ]
+      .filter(Boolean)
+      .map((b) => getBackdropUrl(b, 'w1280', activeMovie?.posterUrl));
+  }, [activeMovie]);
 
   const activeImageList = isMobile ? portraitImages : landscapeImages;
   const currentImageUrl =
@@ -60,28 +71,34 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
       ? getPosterUrl(activeMovie?.posterUrl, 'w780', activeMovie?.backdropUrl)
       : getBackdropUrl(activeMovie?.backdropUrl, 'w1280', activeMovie?.posterUrl));
 
-  // 1. Cycle through artwork every 5 seconds
+  // 1. Cycle through artwork every 5 seconds (only when active and tab is visible)
   useEffect(() => {
-    if (activeImageList.length <= 1) return;
+    if (!isActive || activeImageList.length <= 1) return;
     const artTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       setActiveBackdropIdx((prev) => (prev + 1) % activeImageList.length);
     }, 5000);
 
     return () => clearInterval(artTimer);
-  }, [activeMovie?.id, activeImageList.length]);
+  }, [isActive, activeMovie?.id, activeImageList.length]);
 
-  // 2. Switch to different movie every 15 seconds
+  // 2. Switch to different movie every 15 seconds (only when active and tab is visible)
   useEffect(() => {
-    if (spotlightMovies.length <= 1) return;
+    if (!isActive || spotlightMovies.length <= 1) return;
     const movieTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       setCurrentIndex((prev) => (prev + 1) % spotlightMovies.length);
       setActiveBackdropIdx(0);
     }, 15000);
 
     return () => clearInterval(movieTimer);
-  }, [spotlightMovies.length, currentIndex]);
+  }, [isActive, spotlightMovies.length, currentIndex]);
 
   // Handle Swipe Gesture
+  const handleDragStart = () => {
+    isDraggingRef.current = true;
+  };
+
   const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const swipeThreshold = 40;
     if (info.offset.x < -swipeThreshold) {
@@ -93,6 +110,9 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
       setCurrentIndex((prev) => (prev - 1 + spotlightMovies.length) % spotlightMovies.length);
       setActiveBackdropIdx(0);
     }
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 100);
   };
 
   if (!activeMovie) return null;
@@ -101,11 +121,26 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
     <section className="relative w-full px-3 pt-2 pb-2 select-none">
       {/* Edge-to-edge Cinematic Container with Gesture Dragging (Portrait on mobile, widescreen on PC) */}
       <motion.div
+        ref={containerRef}
         drag="x"
+        dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={0.2}
+        dragElastic={0.15}
+        dragMomentum={false}
+        style={{ touchAction: 'pan-y' }}
+        onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        className="relative w-full rounded-3xl overflow-hidden bg-[#13151b] aspect-[3.5/5] sm:aspect-[16/9] shadow-2xl cursor-grab active:cursor-grabbing group"
+        onClick={(e) => {
+          if (isDraggingRef.current) return;
+          const target = e.target as HTMLElement;
+          if (target.closest('button')) return;
+          if (containerRef.current) {
+            onOpenDetails(activeMovie, containerRef.current.getBoundingClientRect());
+          } else {
+            onOpenDetails(activeMovie);
+          }
+        }}
+        className="relative w-full rounded-3xl overflow-hidden bg-[#13151b] aspect-[3.5/5] sm:aspect-[16/9] shadow-2xl cursor-pointer group"
       >
         {/* Visual Crossfade (Portrait on mobile, Landscape on PC) */}
         <AnimatePresence mode="wait">
@@ -176,7 +211,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
           {/* Action Buttons directly on canvas */}
           <div className="flex items-center gap-2 pt-1">
             <motion.button
-              whileTap={{ scale: 0.94 }}
+              whileTap={{ scale: 0.96 }}
               whileHover={{ scale: 1.02 }}
               type="button"
               onClick={() => onPlay(activeMovie)}
@@ -192,7 +227,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             </motion.button>
 
             <motion.button
-              whileTap={{ scale: 0.88 }}
+              whileTap={{ scale: 0.96 }}
               type="button"
               onClick={() => onToggleWatchlist(activeMovie.id)}
               className={`p-3 rounded-2xl flex items-center justify-center transition-all min-h-[44px] min-w-[44px] shadow-lg cursor-pointer ${
@@ -213,10 +248,13 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             </motion.button>
 
             <motion.button
-              whileTap={{ scale: 0.88 }}
+              whileTap={{ scale: 0.96 }}
               type="button"
-              onClick={() => onOpenDetails(activeMovie)}
-              className="p-3 rounded-2xl liquid-glass hover:bg-white/20 text-white flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] shadow-lg cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(activeMovie, e.currentTarget.getBoundingClientRect());
+              }}
+              className="p-3 rounded-2xl liquid-glass hover:bg-white/20 text-white flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] shadow-lg cursor-pointer relative overflow-hidden"
               aria-label="View Movie Details"
             >
               <motion.div

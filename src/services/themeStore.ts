@@ -328,14 +328,14 @@ export interface UiThemeConfig {
 }
 
 export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
-  bgMode: 'color',
-  selectedBgColor: '#08080A',
-  customBgImage: null,
-  customBgImageName: null,
-  bgOverlayDim: 40,
-  bgBlur: 0,
-  selectedFontId: 'inter',
-  selectedPaletteId: null,
+  bgMode: 'image',
+  selectedBgColor: '#1E272E',
+  customBgImage: '/wallpapers/a340ce3e9261a4c29c891ff27e589d61.jpg',
+  customBgImageName: 'Akira Redline',
+  bgOverlayDim: 0,
+  bgBlur: 12,
+  selectedFontId: 'panchange',
+  selectedPaletteId: 'high-contrast-tech',
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -451,12 +451,21 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   }
 }
 
+const THEME_VERSION_KEY = 'refra_theme_ver_akira_redline_cyber_tech';
+
 export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
   try {
+    const isUpgraded = localStorage.getItem(THEME_VERSION_KEY);
+    if (!isUpgraded) {
+      localStorage.setItem(THEME_VERSION_KEY, 'true');
+      await saveThemeConfig(DEFAULT_THEME_CONFIG);
+      return DEFAULT_THEME_CONFIG;
+    }
+
     const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
     if (fromIdb) return { ...DEFAULT_THEME_CONFIG, ...fromIdb };
 
-    const fromLocal = localStorage.getItem('refra_ui_theme_config') || localStorage.getItem('luma_ui_theme_config');
+    const fromLocal = localStorage.getItem('refra_ui_theme_config');
     if (fromLocal) return { ...DEFAULT_THEME_CONFIG, ...JSON.parse(fromLocal) };
   } catch (err) {
     console.warn('Load theme config notice:', err);

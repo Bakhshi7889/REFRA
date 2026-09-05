@@ -269,12 +269,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
         <div className="rounded-3xl glass-card-themed p-4 space-y-4">
           {/* Surface Mode Toggle */}
           <div className="flex items-center justify-between pb-2 border-b border-white/5">
-            <div>
-              <h5 className="text-xs font-semibold text-white">Canvas Surface</h5>
-              <p className="text-[11px] text-neutral-400">
-                18 Curated 9:16 Wallpapers or Deep OLED Swatches
-              </p>
-            </div>
+            <h5 className="text-xs font-semibold text-white">Canvas Surface</h5>
 
             <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.05] border border-white/10 text-[11px]">
               <button
@@ -287,7 +282,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                 }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>9:16 Wallpapers</span>
+                <span>Wallpapers</span>
                 {themeConfig.customBgImage && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
               </button>
               <button
@@ -304,25 +299,22 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                 }`}
               >
                 <Palette className="w-3.5 h-3.5" />
-                <span>OLED Colors</span>
+                <span>OLED Color</span>
               </button>
             </div>
           </div>
 
-          {/* ================= ATMOSPHERIC DIALS (DIM DIAL & BLUR DIAL) ================= */}
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3.5">
-            <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-[var(--color-accent)]/15 text-[var(--color-accent)] flex items-center justify-center">
-                  <Sliders className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <h6 className="text-xs font-semibold text-white">Atmospheric Optics Dials</h6>
-                  <p className="text-[10px] text-neutral-400">
-                    Dual hardware-accelerated Dimming & Gaussian Blur
-                  </p>
-                </div>
-              </div>
+          {themeConfig.bgMode === 'image' && (
+            <>
+              {/* ================= ATMOSPHERIC DIALS (DIM DIAL & BLUR DIAL) ================= */}
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3.5">
+                <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-xl bg-[var(--color-accent)]/15 text-[var(--color-accent)] flex items-center justify-center">
+                      <Sliders className="w-3.5 h-3.5" />
+                    </div>
+                    <h6 className="text-xs font-semibold text-white">Atmospheric Optics Dials</h6>
+                  </div>
 
               {(themeConfig.bgOverlayDim !== 40 || (themeConfig.bgBlur || 0) !== 0) && (
                 <button
@@ -444,22 +436,15 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
             </div>
           </div>
 
-          {/* ================= 18 CURATED 9:16 WALLPAPERS ================= */}
+          {/* ================= CURATED WALLPAPERS ================= */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-white flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>18 Curated 9:16 Wallpapers</span>
-                </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-white/10 text-neutral-300">
-                  9:16 Portrait
-                </span>
-              </div>
+              <span className="font-semibold text-white flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Curated Wallpapers</span>
+              </span>
               <span className="text-[11px] text-neutral-400 truncate max-w-[150px]">
-                {themeConfig.bgMode === 'image' && themeConfig.customBgImage
-                  ? themeConfig.customBgImageName || 'Active Wallpaper'
-                  : 'OLED Swatch Active'}
+                {themeConfig.customBgImageName || 'Active Wallpaper'}
               </span>
             </div>
 
@@ -478,7 +463,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                         : 'border-white/10 hover:border-white/30 hover:scale-[1.02] opacity-85 hover:opacity-100'
                     }`}
                   >
-                    {/* 9:16 Image */}
+                    {/* Clean Wallpaper Image */}
                     <img
                       src={wp.url}
                       alt={wp.name}
@@ -486,27 +471,11 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
 
-                    {/* Gradient vignette & badge */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent p-2 flex flex-col justify-between">
-                      <div className="flex justify-end">
-                        {isSelected ? (
-                          <div className="w-5 h-5 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-contrast)] flex items-center justify-center shadow-md">
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        ) : (
-                          <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/60 text-white/80 backdrop-blur-sm">
-                            {wp.tag}
-                          </span>
-                        )}
+                    {isSelected && (
+                      <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-contrast)] flex items-center justify-center shadow-md z-10">
+                        <Check className="w-3 h-3 stroke-[3]" />
                       </div>
-
-                      <div>
-                        <div className="text-[11px] font-bold text-white leading-tight truncate drop-shadow-sm">
-                          {wp.name}
-                        </div>
-                        <div className="text-[9px] text-neutral-300 font-medium">9:16 HD</div>
-                      </div>
-                    </div>
+                    )}
                   </button>
                 );
               })}
@@ -520,12 +489,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                 <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center">
                   <Upload className="w-4 h-4" />
                 </div>
-                <div>
-                  <h6 className="text-xs font-semibold text-white">Custom Device Wallpaper</h6>
-                  <p className="text-[10px] text-neutral-400">
-                    Upload your own photo or custom artwork • Stored in IndexedDB
-                  </p>
-                </div>
+                <h6 className="text-xs font-semibold text-white">Custom Device Wallpaper</h6>
               </div>
 
               <div className="flex items-center gap-2">
@@ -563,7 +527,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/80 text-white flex items-center gap-1 backdrop-blur-md">
                       <CheckCircle2 className="w-3 h-3" />
-                      {themeConfig.bgMode === 'image' ? 'Active Wallpaper Layer' : 'Stored in Memory'}
+                      <span>Active Wallpaper</span>
                     </span>
 
                     <button
@@ -596,64 +560,63 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
               </div>
             )}
           </div>
+        </>
+      )}
 
-          {/* ================= 15 PRECISION OLED BACKGROUND COLORS ================= */}
-          <div className="space-y-2.5 pt-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-neutral-300">
-                15 Dark Canvas Swatches
-              </span>
-              <span className="text-[11px] font-mono text-neutral-400">
-                {themeConfig.bgMode === 'color' ? themeConfig.selectedBgColor : 'Image Mode'}
-              </span>
-            </div>
+      {/* ================= 15 PRECISION OLED BACKGROUND COLORS (APPEAR WHEN TAPPED OLED COLOR) ================= */}
+      {themeConfig.bgMode === 'color' && (
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-white">
+              15 OLED Canvas Swatches
+            </span>
+            <span className="text-[11px] font-mono text-neutral-400">
+              {themeConfig.selectedBgColor}
+            </span>
+          </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {BACKGROUND_COLOR_OPTIONS.map((bg) => {
-                const isSelected =
-                  themeConfig.bgMode === 'color' &&
-                  themeConfig.selectedBgColor.toLowerCase() === bg.hex.toLowerCase();
-                return (
-                  <button
-                    key={bg.hex}
-                    type="button"
-                    onClick={() => handleSelectBgColor(bg.hex)}
-                    className={`p-2.5 rounded-2xl border transition-all text-left group relative cursor-pointer ${
-                      isSelected
-                        ? 'border-[var(--color-accent)] bg-white/10 shadow-lg scale-[1.02]'
-                        : 'border-white/5 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div
-                        className="w-5 h-5 rounded-full border border-white/20 shadow-inner"
-                        style={{ backgroundColor: bg.hex }}
-                      />
-                      {isSelected && (
-                        <div className="w-4 h-4 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-contrast)] flex items-center justify-center shadow-sm">
-                          <Check className="w-2.5 h-2.5 stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-[11px] font-semibold text-white truncate">{bg.name}</div>
-                    <div className="text-[10px] font-mono text-neutral-400">{bg.hex}</div>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+            {BACKGROUND_COLOR_OPTIONS.map((bg) => {
+              const isSelected =
+                themeConfig.bgMode === 'color' &&
+                themeConfig.selectedBgColor.toLowerCase() === bg.hex.toLowerCase();
+              return (
+                <button
+                  key={bg.hex}
+                  type="button"
+                  onClick={() => handleSelectBgColor(bg.hex)}
+                  className={`p-2.5 rounded-2xl border transition-all text-left group relative cursor-pointer ${
+                    isSelected
+                      ? 'border-[var(--color-accent)] bg-white/10 shadow-lg scale-[1.02]'
+                      : 'border-white/5 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div
+                      className="w-5 h-5 rounded-full border border-white/20 shadow-inner"
+                      style={{ backgroundColor: bg.hex }}
+                    />
+                    {isSelected && (
+                      <div className="w-4 h-4 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-contrast)] flex items-center justify-center shadow-sm">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[11px] font-semibold text-white truncate">{bg.name}</div>
+                  <div className="text-[10px] font-mono text-neutral-400">{bg.hex}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
+    </div>
+  )}
 
       {/* ================= TAB 2: TYPOGRAPHY (4 FONTS) ================= */}
       {activeSubTab === 'fonts' && (
         <div className="rounded-3xl glass-card-themed p-4 space-y-3.5">
-          <div>
-            <h5 className="text-xs font-semibold text-white">Typographic Scale</h5>
-            <p className="text-[11px] text-neutral-400">
-              Select one of the 4 curated font pairings across the entire discovery interface.
-            </p>
-          </div>
+          <h5 className="text-xs font-semibold text-white">Typographic Scale</h5>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {FONT_OPTIONS.map((font, idx) => {
@@ -703,17 +666,12 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
       {/* ================= TAB 3: 15 LUXURY PALETTES (60-30-10 RULE) ================= */}
       {activeSubTab === 'palettes' && (
         <div className="rounded-3xl glass-card-themed p-4 space-y-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h5 className="text-xs font-semibold text-white">15 Luxury Color Palettes</h5>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold badge-theme">
-                  60-30-10 Rule
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-0.5">
-                Harmonized luxury palettes that tint blur surfaces, cards, and buttons.
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h5 className="text-xs font-semibold text-white">15 Luxury Color Palettes</h5>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold badge-theme">
+                60-30-10 Rule
+              </span>
             </div>
 
             {themeConfig.selectedPaletteId && (
@@ -777,9 +735,6 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h6 className="text-xs font-bold text-white">{palette.name}</h6>
-                      <p className="text-[10px] text-neutral-400 mt-0.5 line-clamp-1">
-                        {palette.description}
-                      </p>
                     </div>
 
                     {isSelected && (

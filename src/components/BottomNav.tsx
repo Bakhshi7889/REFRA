@@ -157,7 +157,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <motion.button
               key={tab.id}
               type="button"
-              whileTap={{ scale: 0.86 }}
+              whileTap={{ scale: 0.96 }}
               onClick={() => onTabChange(tab.id)}
               className="relative flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-full text-xs transition-colors min-h-[44px] cursor-pointer"
               aria-label={tab.label}
@@ -166,7 +166,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 <motion.div
                   layoutId="activeNavTab"
                   className="absolute inset-0 bg-[#262b37] rounded-full shadow-inner"
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 28 }}
                 />
               )}
 

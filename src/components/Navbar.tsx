@@ -62,7 +62,7 @@ export const Navbar: React.FC = () => {
         <div className="pointer-events-auto liquid-glass rounded-full px-2 py-1.5 flex items-center gap-1 shadow-2xl">
           {/* Cast Button */}
           <motion.button
-            whileTap={{ scale: 0.86 }}
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={() => setIsCastConnected(!isCastConnected)}
             className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer ${
@@ -91,7 +91,7 @@ export const Navbar: React.FC = () => {
 
           {/* Notification Bell */}
           <motion.button
-            whileTap={{ scale: 0.86 }}
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={() => {
               setIsBellActive(true);

@@ -6,7 +6,7 @@ import { getPosterUrl } from '../utils/imageHelpers';
 
 interface WatchlistViewProps {
   watchlistMovies: Movie[];
-  onMovieClick: (movie: Movie) => void;
+  onMovieClick: (movie: Movie, originRect?: DOMRect) => void;
   onRemove: (movieId: string) => void;
   onBackToHome: () => void;
 }
@@ -66,13 +66,15 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               whileTap={{ scale: 0.96 }}
-              className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg"
-              onClick={() => onMovieClick(movie)}
+              transition={{ duration: 0.08, ease: 'easeOut' }}
+              className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer will-change-transform"
+              onClick={(e) => onMovieClick(movie, e.currentTarget.getBoundingClientRect())}
             >
               <img
                 src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
+                draggable={false}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
               />
 

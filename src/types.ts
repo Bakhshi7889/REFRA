@@ -28,6 +28,40 @@ export interface AnimeEpisode {
   synopsis?: string;
 }
 
+export interface MovieCastMember {
+  id?: number | string;
+  name: string;
+  character?: string;
+  profileUrl?: string;
+}
+
+export interface ProductionCompany {
+  id?: number;
+  name: string;
+  logoUrl?: string;
+  country?: string;
+}
+
+export interface ProductionTeam {
+  director?: string;
+  writers?: string[];
+  producers?: string[];
+  cinematographer?: string;
+  composer?: string;
+}
+
+export interface FilmRating {
+  source: string;
+  value: string;
+}
+
+export interface WatchProvider {
+  id?: number;
+  name: string;
+  logoUrl: string;
+  type?: string;
+}
+
 export interface Movie {
   id: string;
   tmdbId?: number;
@@ -68,6 +102,17 @@ export interface Movie {
     timeLeft: string;
     lastWatched: string;
   };
+  budget?: string | number;
+  revenue?: string | number;
+  boxOffice?: string;
+  productionTeam?: ProductionTeam;
+  productionCompaniesList?: ProductionCompany[];
+  productionCountries?: string[];
+  spokenLanguages?: string[];
+  castDetailed?: MovieCastMember[];
+  ratingsDetailed?: FilmRating[];
+  awards?: string;
+  watchProviders?: WatchProvider[];
 }
 
 export type CategoryFilter = 
@@ -80,3 +125,50 @@ export type CategoryFilter =
   | 'Thriller';
 
 export type NavTab = 'home' | 'explore' | 'search' | 'watchlist' | 'profile';
+
+export interface ExpansionOrigin {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  top?: number;
+  left?: number;
+}
+
+export interface StreamItem {
+  id: string;
+  name: string;
+  title: string;
+  movieName?: string;
+  serverName: string;
+  serverLogo?: string;
+  quality: string;
+  sourceType?: string;
+  specs?: string;
+  hdr?: string;
+  codec?: string;
+  audioFormat?: string;
+  bitrate?: string;
+  fileSize?: string;
+  fileSizeBytes?: number;
+  sourceHost?: string;
+  url: string;
+  embedUrl?: string;
+  rawDescription?: string;
+  badges: string[];
+  languages?: string[];
+  subtitles?: string[];
+  subtitlesText?: string;
+  scraperRepo?: string;
+  isDirect?: boolean;
+}
+
+export interface AddonServerConfig {
+  id: string;
+  name: string;
+  manifestUrl: string;
+  logo: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
