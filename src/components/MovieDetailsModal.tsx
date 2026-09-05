@@ -93,11 +93,27 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
   }, []);
 
   const isMobile = dimensions.width < 640;
-  const targetWidth = isMobile ? dimensions.width : Math.min(dimensions.width - 32, 540);
-  const targetHeight = isMobile ? dimensions.height : Math.min(dimensions.height - 48, 860);
+  const targetWidth = isMobile
+    ? dimensions.width
+    : Math.min(dimensions.width - 48, dimensions.width >= 1024 ? 920 : 680);
+  const targetHeight = isMobile
+    ? dimensions.height
+    : Math.min(dimensions.height - 48, 880);
   const targetLeft = isMobile ? 0 : (dimensions.width - targetWidth) / 2;
   const targetTop = isMobile ? 0 : (dimensions.height - targetHeight) / 2;
   const targetRadius = isMobile ? 0 : 28;
+
+  // Keyboard shortcut support (Escape to close, Space to play trailer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const hasOrigin = Boolean(
     expansionOrigin &&

@@ -186,9 +186,11 @@ export const ReviewsSection: React.FC<ReviewsSectionProps> = ({ movie }) => {
       <AnimatePresence>
         {isWriting && (
           <motion.form
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0, scaleY: 0.96, y: -6 }}
+            animate={{ opacity: 1, scaleY: 1, y: 0 }}
+            exit={{ opacity: 0, scaleY: 0.96, y: -6 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            style={{ transformOrigin: 'top', willChange: 'transform, opacity' }}
             onSubmit={handleSubmitReview}
             className="p-4 rounded-3xl bg-[#181b26] border border-white/10 space-y-3.5 overflow-hidden shadow-2xl"
           >

@@ -53,7 +53,7 @@ export interface StreamFilters {
 }
 
 export const DEFAULT_STREAM_FILTERS: StreamFilters = {
-  provider: 'All',
+  provider: 'PenguPlay',
   quality: 'All',
   language: 'All',
   sizeRange: 'All',
@@ -278,12 +278,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             `${selectedStream.quality || '4K'} • ${selectedStream.fileSize || 'Ultra High Definition'}`
           );
         } else if (list.length > 0) {
-          // AUTO-SELECT THE BEST STREAM
-          const ranked = [...list].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
+          // AUTO-SELECT THE BEST STREAM (Prioritize default PenguPlay)
+          const penguList = list.filter((s) => (s.serverName || '').toLowerCase().includes('pengu'));
+          const candidates = penguList.length > 0 ? penguList : list;
+          const ranked = [...candidates].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
           const best = ranked[0];
           setActiveStream(best);
           showToast(
-            `✨ Auto-selected best stream: ${best.serverName || 'Ultra Pipeline'}`,
+            `✨ Auto-selected best stream: ${best.serverName || 'PenguPlay'}`,
             `${best.quality || '4K'} • ${best.fileSize || 'Ultra Bitrate'}`
           );
         } else {
@@ -302,11 +304,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         if (selectedStream) {
           setActiveStream(selectedStream);
         } else if (list.length > 0) {
-          const ranked = [...list].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
+          const penguList = list.filter((s) => (s.serverName || '').toLowerCase().includes('pengu'));
+          const candidates = penguList.length > 0 ? penguList : list;
+          const ranked = [...candidates].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
           const best = ranked[0];
           setActiveStream(best);
           showToast(
-            `✨ Auto-selected best stream: ${best.serverName || 'Ultra Pipeline'}`,
+            `✨ Auto-selected best stream: ${best.serverName || 'PenguPlay'}`,
             `${best.quality || '4K'} • ${best.fileSize || 'Ultra Bitrate'}`
           );
         } else {
@@ -479,6 +483,124 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFs);
   }, []);
 
+  // Mouse idle auto-hide for desktop / tablet
+  const [isMouseIdle, setIsMouseIdle] = useState(false);
+  const mouseTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseMove = useCallback(() => {
+    setIsMouseIdle(false);
+    if (mouseTimerRef.current) clearTimeout(mouseTimerRef.current);
+    mouseTimerRef.current = setTimeout(() => {
+      setIsMouseIdle(true);
+    }, 2500);
+  }, []);
+
+  // Keyboard navigation & playback controls (Space, Esc, Arrows, F, M, N, S)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'Escape':
+          e.preventDefault();
+          if (isFullscreen) {
+            toggleFullscreen();
+          } else {
+            onClose();
+          }
+          break;
+
+        case ' ': // Space: Play/Pause
+          e.preventDefault();
+          if (videoRef.current) {
+            if (videoRef.current.paused) {
+              videoRef.current.play().catch(() => {});
+            } else {
+              videoRef.current.pause();
+            }
+          }
+          break;
+
+        case 'ArrowLeft': // Seek back 10s
+          e.preventDefault();
+          if (videoRef.current) {
+            videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+          }
+          break;
+
+        case 'ArrowRight': // Seek forward 10s
+          e.preventDefault();
+          if (videoRef.current) {
+            videoRef.current.currentTime = Math.min(
+              videoRef.current.duration || 99999,
+              videoRef.current.currentTime + 10
+            );
+          }
+          break;
+
+        case 'ArrowUp': // Volume +10%
+          e.preventDefault();
+          if (videoRef.current) {
+            videoRef.current.volume = Math.min(1, videoRef.current.volume + 0.1);
+          }
+          break;
+
+        case 'ArrowDown': // Volume -10%
+          e.preventDefault();
+          if (videoRef.current) {
+            videoRef.current.volume = Math.max(0, videoRef.current.volume - 0.1);
+          }
+          break;
+
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          if (videoRef.current) {
+            videoRef.current.muted = !videoRef.current.muted;
+          }
+          break;
+
+        case 'n':
+        case 'N':
+          if (movie?.episodes && currentEpisodeIndex < movie.episodes.length - 1) {
+            e.preventDefault();
+            setCurrentEpisodeIndex((prev) => prev + 1);
+          }
+          break;
+
+        case 's':
+        case 'S':
+          e.preventDefault();
+          setIsDropdownOpen((prev) => !prev);
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (mouseTimerRef.current) clearTimeout(mouseTimerRef.current);
+    };
+  }, [isOpen, isFullscreen, toggleFullscreen, onClose, movie, currentEpisodeIndex]);
+
   // Record history & analytics
   useEffect(() => {
     if (isOpen && movie) {
@@ -525,120 +647,57 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     <AnimatePresence>
       <div
         ref={containerRef}
-        className={`fixed inset-0 z-[75] bg-[#08090d] text-white flex flex-col select-none overflow-hidden overscroll-none ${
+        className={`fixed inset-0 z-[75] text-white flex flex-col select-none overflow-hidden overscroll-none ${
           isRotatedLandscape
             ? 'rotate-90 origin-center w-[100dvh] h-[100dvw] fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
             : 'w-full h-full'
         }`}
       >
-        {/* SVG Filter for Liquid Glass */}
-        <svg className="absolute w-0 h-0 pointer-events-none opacity-0" aria-hidden="true">
-          <defs>
-            <filter id="liquid-distortion" x="0%" y="0%" width="100%" height="100%">
-              <feTurbulence
-                type="fractalNoise"
-                baseFrequency="0.008 0.008"
-                numOctaves={2}
-                seed={92}
-                result="noise"
-              />
-              <feDisplacementMap
-                in="SourceGraphic"
-                in2="noise"
-                scale={16}
-                xChannelSelector="R"
-                yChannelSelector="G"
-              />
-            </filter>
-          </defs>
-        </svg>
+        {/* ================= ATMOSPHERIC MOVIE ARTWORK AMBIENT BACKDROP BLUR ================= */}
+        <div
+          className="absolute inset-0 pointer-events-none overflow-hidden z-0"
+          style={{ transform: 'translateZ(0)' }}
+        >
+          {currentMovie.backdropUrl && (
+            <img
+              src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
+              alt=""
+              className="w-full h-full object-cover filter blur-3xl scale-110 opacity-30 brightness-75"
+              style={{ willChange: 'transform' }}
+            />
+          )}
+          <div className="absolute inset-0 bg-[#08090d]/85" />
+        </div>
 
-        {/* ================= TOP BAR (CLEAN, MOBILE-OPTIMIZED, NO BROKEN SELECTOR) ================= */}
+        {/* ================= FLOATING BACK BUTTON WITH SIGNATURE BLUR ================= */}
         {!isFullscreen && (
-          <header className="shrink-0 z-30 px-3 sm:px-6 py-2.5 flex items-center justify-between border-b border-white/10 bg-[#08090d]/80 backdrop-blur-xl touch-none select-none overscroll-none">
-            {/* Back Button + Title */}
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-2 sm:px-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.96] text-neutral-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 border border-white/10 shrink-0 min-h-[44px] min-w-[44px] justify-center"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline text-xs font-semibold">Back</span>
-              </button>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xs sm:text-sm font-bold text-white truncate drop-shadow-sm">
-                    {currentMovie.title}
-                  </h1>
-                  {isSeries && (
-                    <span className="text-[10px] text-emerald-300 font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 shrink-0">
-                      EP {episodeNumber}
-                    </span>
-                  )}
-                  <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shrink-0">
-                    {currentQualityTitle}
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-400 font-light truncate">
-                  {currentMovie.releaseYear} • {currentMovie.duration} • {currentMovie.certification}
-                </p>
-              </div>
-            </div>
-
-            {/* Action Buttons: Reload, Rotate, Fullscreen */}
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setKeyReloadIndex((k) => k + 1)}
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.96] text-neutral-300 hover:text-white transition-all cursor-pointer border border-white/10 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                title="Reload Stream"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsRotatedLandscape((prev) => !prev)}
-                className={`p-2 rounded-xl active:scale-[0.96] transition-all cursor-pointer border min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                  isRotatedLandscape
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white border-white/10'
-                }`}
-                title={isRotatedLandscape ? 'Reset to Portrait' : 'Rotate to Landscape'}
-              >
-                <RotateCw className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 active:scale-[0.96] text-neutral-300 hover:text-white transition-all cursor-pointer border border-white/10 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                title="Fullscreen"
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-            </div>
-          </header>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Back"
+            title="Back (Esc)"
+            className="fixed top-4 left-4 z-50 w-11 h-11 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 shadow-2xl group"
+          >
+            <ArrowLeft className="w-5 h-5 transition-transform group-hover:-translate-x-0.5" />
+          </button>
         )}
-
-        {/* Toast notification removed per user request */}
 
         {/* ================= MAIN SCROLLABLE STREAMING PAGE CONTENT ================= */}
         <div
-          className={`flex-1 overflow-y-auto hide-scrollbar overscroll-contain ${
-            isFullscreen ? 'p-0 flex items-center justify-center' : 'px-3 sm:px-6 lg:px-8 py-3 space-y-5 max-w-5xl mx-auto w-full'
-          }`}
+          onMouseMove={handleMouseMove}
+          className={`relative z-10 flex-1 overflow-y-auto hide-scrollbar overscroll-contain ${
+            isFullscreen
+              ? 'p-0 flex items-center justify-center'
+              : 'px-3 sm:px-6 lg:px-8 pt-16 pb-14 space-y-6 max-w-6xl mx-auto w-full'
+          } ${isMouseIdle ? 'cursor-none' : ''}`}
         >
-          {/* ================= 1. VIDEO STAGE (ABOVE DROPDOWN) ================= */}
+          {/* ================= 1. SIGNATURE BIG IMAGE FIRST / VIDEO PLAYER STAGE ================= */}
           <section
             onDoubleClick={handleDoubleTap}
-            className={`relative mx-auto overflow-hidden bg-black shadow-2xl border border-white/10 ${
+            className={`relative mx-auto overflow-hidden bg-black/90 shadow-2xl ${
               isFullscreen
-                ? 'w-full h-full rounded-0 border-0'
-                : 'w-full aspect-[16/9] max-h-[55vh] rounded-2xl sm:rounded-3xl'
+                ? 'w-full h-full rounded-none'
+                : 'w-full aspect-[16/9] max-h-[62vh] rounded-2xl sm:rounded-3xl'
             }`}
           >
             {/* If stream is playing: Show embed or video */}
@@ -664,24 +723,24 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 />
               )
             ) : (
-              /* Blurred movie placeholder: uses the poster/backdrop as blurred while connecting or when no stream is chosen */
+              /* Big Movie Artwork Hero when loading / connecting */
               <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                 <img
-                  src={getPosterUrl(currentMovie.posterUrl, 'w780', currentMovie.backdropUrl)}
+                  src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
                   alt={currentMovie.title}
-                  className="absolute inset-0 w-full h-full object-cover filter blur-2xl scale-125 opacity-40"
+                  className="absolute inset-0 w-full h-full object-cover filter blur-xs scale-105 opacity-60"
                 />
-                <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" />
 
                 <div className="relative z-10 flex flex-col items-center text-center p-6 space-y-3 max-w-sm">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center animate-pulse">
-                    <Play className="w-5 h-5 text-emerald-400 fill-emerald-400 ml-0.5" />
+                  <div className="w-14 h-14 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center animate-pulse shadow-lg">
+                    <Play className="w-6 h-6 text-white fill-white ml-0.5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white drop-shadow">
+                    <h3 className="text-base font-bold text-white drop-shadow">
                       {isLoadingStreams ? 'Finding Best 4K Stream...' : 'Connecting to Stream...'}
                     </h3>
-                    <p className="text-xs text-neutral-400 mt-1 font-light">
+                    <p className="text-xs text-neutral-300 mt-1 font-light">
                       {isLoadingStreams
                         ? 'Analyzing PenguPlay, TorrentsDB & multi-debrid pipelines...'
                         : 'Tap the server dropdown below to pick a specific stream.'}
@@ -696,21 +755,21 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <button
                 type="button"
                 onClick={toggleFullscreen}
-                className="absolute top-4 right-4 z-50 p-2 rounded-xl bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/20 transition-all cursor-pointer active:scale-[0.96]"
+                className="absolute top-4 right-4 z-50 p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-all cursor-pointer active:scale-95 shadow-xl"
                 title="Exit Fullscreen"
               >
-                <Minimize className="w-4 h-4" />
+                <Minimize className="w-5 h-5" />
               </button>
             )}
           </section>
 
-          {/* If NOT in fullscreen: Render Dropdown + Full Film Details */}
+          {/* If NOT in fullscreen: Render Responsive 2-Column Grid Layout for PC & Tablet */}
           {!isFullscreen && (
-            <>
-              {/* ================= 2. DROP-DOWN SERVER SELECTOR (BELOW VIDEO STAGE) ================= */}
-              {/* ================= 2. MAIN PILL (EXPANDS OPEN IN-PLACE TO SHOW AVAILABLE SERVERS) ================= */}
-              <section className="space-y-2">
-                <div className="w-full rounded-2xl bg-white/[0.06] border border-white/10 overflow-hidden shadow-lg backdrop-blur-xl transition-colors duration-200">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* ================= LEFT COLUMN: SERVER SELECTOR & MOVIE DETAILS (lg:col-span-8) ================= */}
+              <div className="lg:col-span-8 space-y-6">
+                {/* 2. DROP-DOWN SERVER SELECTOR */}
+                <div className="w-full rounded-2xl sm:rounded-3xl bg-white/[0.04] overflow-hidden shadow-xl backdrop-blur-xl transition-colors duration-200">
                   {/* Dropdown Trigger Card */}
                   <div
                     role="button"
@@ -772,19 +831,65 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Expandable Dropdown Menu with Fluid Liquid Animation in-place */}
+                  {/* Expandable Dropdown Menu with GPU-accelerated transforms */}
                   <AnimatePresence initial={false}>
                     {isDropdownOpen && (
                       <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                        className="overflow-hidden border-t border-white/10"
+                        initial={{ opacity: 0, scaleY: 0.95, y: -6 }}
+                        animate={{ opacity: 1, scaleY: 1, y: 0 }}
+                        exit={{ opacity: 0, scaleY: 0.95, y: -6 }}
+                        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ transformOrigin: 'top', willChange: 'transform, opacity' }}
+                        className="overflow-hidden bg-black/40 backdrop-blur-xl"
                       >
                         <div className="p-3 sm:p-3.5 space-y-3 bg-black/20">
+                        {/* Top Quick Server Mode Toggle: PenguPlay (Default) vs All Sources */}
+                        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppliedFilters((f) => ({ ...f, provider: 'PenguPlay' }));
+                              setPendingFilters((f) => ({ ...f, provider: 'PenguPlay' }));
+                            }}
+                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                              appliedFilters.provider.toLowerCase().includes('pengu')
+                                ? 'bg-white text-black shadow-sm'
+                                : 'text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            <ProviderLogo serverName="PenguPlay" className="w-4 h-4 shrink-0" />
+                            <span>PenguPlay</span>
+                            <span className="text-[10px] opacity-75">(Default)</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppliedFilters((f) => ({ ...f, provider: 'All' }));
+                              setPendingFilters((f) => ({ ...f, provider: 'All' }));
+                            }}
+                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                              appliedFilters.provider === 'All'
+                                ? 'bg-white text-black shadow-sm'
+                                : 'text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            <Layers className="w-4 h-4 shrink-0" />
+                            <span>All Sources</span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                appliedFilters.provider === 'All'
+                                  ? 'bg-black/15 text-black'
+                                  : 'bg-white/10 text-neutral-300'
+                              }`}
+                            >
+                              {streams.length}
+                            </span>
+                          </button>
+                        </div>
+
                         {/* Header with Sources count and Filters toggle button */}
-                        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                        <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
                           <div className="flex items-center gap-2">
                             <div className="text-xs font-bold text-white flex items-center gap-1.5">
                               <span>Available Sources</span>
@@ -792,7 +897,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                 {filteredStreams.length}
                               </span>
                             </div>
-                            <span className="hidden sm:inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-md bg-white/10 border border-white/15">
+                            <span className="hidden sm:inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
                               ★ Ranked by Best
                             </span>
                           </div>
@@ -806,10 +911,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                               }
                               setIsFilterDropdownOpen((prev) => !prev);
                             }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border active:scale-[0.96] ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-[0.96] ${
                               isFilterDropdownOpen || activeFilterCount > 0
-                                ? 'bg-white/20 text-white border-white/40'
-                                : 'bg-white/5 text-neutral-300 hover:text-white border-white/10'
+                                ? 'bg-white/20 text-white'
+                                : 'bg-white/5 text-neutral-300 hover:text-white'
                             }`}
                           >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -831,11 +936,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         <AnimatePresence>
                           {isFilterDropdownOpen && (
                             <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.25, ease: 'easeInOut' }}
-                              className="overflow-hidden space-y-3 p-3 rounded-xl bg-black/40 border border-white/10 backdrop-blur-md"
+                              initial={{ opacity: 0, scaleY: 0.94, y: -4 }}
+                              animate={{ opacity: 1, scaleY: 1, y: 0 }}
+                              exit={{ opacity: 0, scaleY: 0.94, y: -4 }}
+                              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                              style={{ transformOrigin: 'top', willChange: 'transform, opacity' }}
+                              className="overflow-hidden space-y-3 p-3 rounded-xl bg-black/40 backdrop-blur-md"
                             >
                               {/* 1. Provider Filter */}
                               <div className="space-y-1.5">
@@ -1295,31 +1401,28 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     )}
                   </AnimatePresence>
                 </div>
-              </section>
 
-              {/* ================= 3. ALL FILM INFORMATION BELOW DROPDOWN ================= */}
-              <section className="space-y-6 pt-2">
                 {/* Film Overview & Synopsis */}
-                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3 backdrop-blur-xl">
-                  {/* Meta Chips */}
+                <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
+                  {/* Meta Chips - Clean Monochrome Signature */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-white/10 text-white border border-white/10">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/10 text-white">
                       {currentMovie.releaseYear}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-neutral-300 border border-white/5">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/5 text-neutral-300">
                       {currentMovie.duration}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/5 text-neutral-300 border border-white/5">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/5 text-neutral-300">
                       {currentMovie.certification}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white text-black flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-black text-black" />
                       {currentMovie.score}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/10 text-white font-mono">
                       {currentMovie.resolution}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/10 text-neutral-200">
                       {currentMovie.audioFormat}
                     </span>
                   </div>
@@ -1352,7 +1455,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       {currentMovie.genres.map((g) => (
                         <span
                           key={g}
-                          className="px-2.5 py-1 rounded-xl text-[11px] font-medium bg-white/5 text-neutral-300 border border-white/10"
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-medium bg-white/5 text-neutral-300"
                         >
                           {g}
                         </span>
@@ -1361,56 +1464,18 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   )}
                 </div>
 
-                {/* Episodes Switcher (if TV series or anime) */}
-                {currentMovie.episodes && currentMovie.episodes.length > 0 && (
-                  <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-emerald-400" />
-                        <span>Episodes ({currentMovie.episodes.length})</span>
-                      </h3>
-                      <span className="text-xs text-neutral-400">
-                        Current: EP {episodeNumber}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-2 overflow-x-auto hide-scrollbar py-1">
-                      {currentMovie.episodes.map((ep, idx) => {
-                        const isCurrent = currentEpisodeIndex === idx;
-                        return (
-                          <button
-                            key={ep.id}
-                            type="button"
-                            onClick={() => {
-                              setCurrentEpisodeIndex(idx);
-                              showToast(`Loading Episode ${ep.number}`, ep.title || 'Switching stream...');
-                            }}
-                            className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer border active:scale-[0.96] ${
-                              isCurrent
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-md'
-                                : 'bg-white/5 text-neutral-300 hover:text-white border-white/5'
-                            }`}
-                          >
-                            EP {ep.number}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 {/* Production Team & Key Crew */}
                 {currentMovie.productionTeam && (
-                  <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3 backdrop-blur-xl">
+                  <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Clapperboard className="w-4 h-4 text-emerald-400" />
+                      <Clapperboard className="w-4 h-4 text-white" />
                       <span>Production Team</span>
                     </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {/* Director */}
                       {currentMovie.productionTeam.director && (
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="p-3 rounded-xl bg-white/[0.02]">
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                             Director
                           </div>
@@ -1422,7 +1487,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                       {/* Screenplay / Writers */}
                       {currentMovie.productionTeam.writers && currentMovie.productionTeam.writers.length > 0 && (
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="p-3 rounded-xl bg-white/[0.02]">
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                             Screenplay & Writers
                           </div>
@@ -1434,7 +1499,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                       {/* Producers */}
                       {currentMovie.productionTeam.producers && currentMovie.productionTeam.producers.length > 0 && (
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="p-3 rounded-xl bg-white/[0.02]">
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                             Producers
                           </div>
@@ -1446,7 +1511,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                       {/* Cinematographer */}
                       {currentMovie.productionTeam.cinematographer && (
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="p-3 rounded-xl bg-white/[0.02]">
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                             Cinematography
                           </div>
@@ -1458,7 +1523,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                       {/* Music Composer */}
                       {currentMovie.productionTeam.composer && (
-                        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                        <div className="p-3 rounded-xl bg-white/[0.02]">
                           <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
                             Original Score & Music
                           </div>
@@ -1471,95 +1536,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   </div>
                 )}
 
-                {/* Financials & Box Office */}
-                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3 backdrop-blur-xl">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-emerald-400" />
-                    <span>Financials & Studio Production</span>
-                  </h3>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {/* Budget */}
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                        Budget
-                      </div>
-                      <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-0.5">
-                        {formatCurrency(currentMovie.budget) || 'Classified / Auteur'}
-                      </div>
-                    </div>
-
-                    {/* Revenue / Box Office */}
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                        Worldwide Box Office
-                      </div>
-                      <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-0.5">
-                        {currentMovie.boxOffice || formatCurrency(currentMovie.revenue) || 'High Premiere Return'}
-                      </div>
-                    </div>
-
-                    {/* Production Countries */}
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                        Country
-                      </div>
-                      <div className="text-xs sm:text-sm font-semibold text-neutral-200 mt-0.5 truncate">
-                        {currentMovie.productionCountries && currentMovie.productionCountries.length > 0
-                          ? currentMovie.productionCountries.join(', ')
-                          : 'United States'}
-                      </div>
-                    </div>
-
-                    {/* Spoken Languages */}
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5">
-                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                        Languages
-                      </div>
-                      <div className="text-xs sm:text-sm font-semibold text-neutral-200 mt-0.5 truncate">
-                        {currentMovie.spokenLanguages && currentMovie.spokenLanguages.length > 0
-                          ? currentMovie.spokenLanguages.join(', ')
-                          : 'English (Dolby Atmos)'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Production Companies */}
-                  {currentMovie.productionCompaniesList && currentMovie.productionCompaniesList.length > 0 && (
-                    <div className="pt-2">
-                      <div className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold mb-2">
-                        Production Studios & Partners
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {currentMovie.productionCompaniesList.map((comp) => (
-                          <div
-                            key={comp.name}
-                            className="px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 flex items-center gap-2"
-                          >
-                            {comp.logoUrl && (
-                              <img
-                                src={comp.logoUrl}
-                                alt={comp.name}
-                                className="h-3.5 max-w-[50px] object-contain filter invert brightness-200"
-                              />
-                            )}
-                            <span className="text-xs font-semibold text-neutral-200">{comp.name}</span>
-                            {comp.country && (
-                              <span className="text-[9px] text-neutral-400 font-mono">
-                                ({comp.country})
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Actors & Cast */}
-                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3 backdrop-blur-xl">
+                <div className="p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Users className="w-4 h-4 text-emerald-400" />
+                    <Users className="w-4 h-4 text-white" />
                     <span>Top Cast & Actors</span>
                   </h3>
 
@@ -1570,16 +1550,16 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     ).map((actor, idx) => (
                       <div
                         key={`${actor.name}_${idx}`}
-                        className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-2.5"
+                        className="p-2.5 rounded-xl bg-white/[0.02] flex items-center gap-2.5"
                       >
                         {actor.profileUrl ? (
                           <img
                             src={actor.profileUrl}
                             alt={actor.name}
-                            className="w-10 h-10 rounded-full object-cover shrink-0 border border-white/10 shadow-sm"
+                            className="w-10 h-10 rounded-full object-cover shrink-0 shadow-sm"
                           />
                         ) : (
-                          <div className="w-10 h-10 rounded-full bg-neutral-800 border border-white/10 flex items-center justify-center shrink-0 text-xs font-bold text-neutral-300">
+                          <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center shrink-0 text-xs font-bold text-neutral-300">
                             {actor.name
                               .split(' ')
                               .map((n) => n[0])
@@ -1597,11 +1577,178 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     ))}
                   </div>
                 </div>
+              </div>
+
+              {/* ================= RIGHT COLUMN: EPISODES & MEDIA SPECS (lg:col-span-4) ================= */}
+              <div className="lg:col-span-4 space-y-6">
+                {/* Episodes Switcher (if TV series or anime) */}
+                {currentMovie.episodes && currentMovie.episodes.length > 0 && (
+                  <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3 backdrop-blur-xl">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-white" />
+                        <span>Episodes ({currentMovie.episodes.length})</span>
+                      </h3>
+                      <span className="text-xs text-neutral-400">
+                        Current: EP {episodeNumber}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto hide-scrollbar py-1">
+                      {currentMovie.episodes.map((ep, idx) => {
+                        const isCurrent = currentEpisodeIndex === idx;
+                        return (
+                          <button
+                            key={ep.id}
+                            type="button"
+                            onClick={() => {
+                              setCurrentEpisodeIndex(idx);
+                              showToast(`Loading Episode ${ep.number}`, ep.title || 'Switching stream...');
+                            }}
+                            className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-[0.96] text-center ${
+                              isCurrent
+                                ? 'bg-white text-black font-bold shadow-md'
+                                : 'bg-white/5 text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            EP {ep.number}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Film Specs Card */}
+                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Film className="w-4 h-4 text-white" />
+                    <span>Media Details</span>
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Release Year
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                        {currentMovie.releaseYear}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Runtime
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                        {currentMovie.duration}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Rating / Cert
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                        {currentMovie.certification}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Resolution
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5 font-mono">
+                        {currentMovie.resolution}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Financials & Studio Production */}
+                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-white" />
+                    <span>Financials & Origin</span>
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {/* Budget */}
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Budget
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                        {formatCurrency(currentMovie.budget) || 'Classified / Auteur'}
+                      </div>
+                    </div>
+
+                    {/* Revenue / Box Office */}
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Box Office
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                        {currentMovie.boxOffice || formatCurrency(currentMovie.revenue) || 'High Premiere Return'}
+                      </div>
+                    </div>
+
+                    {/* Production Countries */}
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Country
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold text-neutral-200 mt-0.5 truncate">
+                        {currentMovie.productionCountries && currentMovie.productionCountries.length > 0
+                          ? currentMovie.productionCountries.join(', ')
+                          : 'United States'}
+                      </div>
+                    </div>
+
+                    {/* Spoken Languages */}
+                    <div className="p-2.5 rounded-xl bg-white/[0.02]">
+                      <div className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
+                        Languages
+                      </div>
+                      <div className="text-xs sm:text-sm font-semibold text-neutral-200 mt-0.5 truncate">
+                        {currentMovie.spokenLanguages && currentMovie.spokenLanguages.length > 0
+                          ? currentMovie.spokenLanguages.join(', ')
+                          : 'English (Dolby Atmos)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Production Companies */}
+                  {currentMovie.productionCompaniesList && currentMovie.productionCompaniesList.length > 0 && (
+                    <div className="pt-2">
+                      <div className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold mb-2">
+                        Production Studios
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {currentMovie.productionCompaniesList.map((comp) => (
+                          <div
+                            key={comp.name}
+                            className="px-2.5 py-1 rounded-xl bg-white/[0.04] flex items-center gap-1.5"
+                          >
+                            {comp.logoUrl && (
+                              <img
+                                src={comp.logoUrl}
+                                alt={comp.name}
+                                className="h-3 max-w-[44px] object-contain filter invert brightness-200"
+                              />
+                            )}
+                            <span className="text-[11px] font-semibold text-neutral-200">{comp.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Critical Reception & Awards */}
-                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.03] border border-white/10 space-y-3 backdrop-blur-xl">
+                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3.5 backdrop-blur-xl">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Award className="w-4 h-4 text-emerald-400" />
+                    <Award className="w-4 h-4 text-white" />
                     <span>Ratings & Awards</span>
                   </h3>
 
@@ -1611,30 +1758,30 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       currentMovie.ratingsDetailed.map((r) => (
                         <div
                           key={r.source}
-                          className="px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 flex items-center gap-2"
+                          className="px-3 py-1.5 rounded-xl bg-white/[0.04] flex items-center gap-2"
                         >
                           <span className="text-[11px] text-neutral-400 font-medium">{r.source}:</span>
                           <span className="text-xs font-bold text-white">{r.value}</span>
                         </div>
                       ))
                     ) : (
-                      <div className="px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 flex items-center gap-2">
+                      <div className="px-3 py-1.5 rounded-xl bg-white/[0.04] flex items-center gap-2">
                         <span className="text-[11px] text-neutral-400 font-medium">Audience Score:</span>
-                        <span className="text-xs font-bold text-emerald-400">{currentMovie.score} / 10</span>
+                        <span className="text-xs font-bold text-white">{currentMovie.score} / 10</span>
                       </div>
                     )}
                   </div>
 
                   {/* Awards Summary */}
                   {currentMovie.awards && (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs font-medium flex items-center gap-2">
-                      <Award className="w-4 h-4 text-amber-400 shrink-0" />
+                    <div className="p-3 rounded-xl bg-white/[0.04] text-neutral-200 text-xs font-medium flex items-center gap-2">
+                      <Award className="w-4 h-4 text-white shrink-0" />
                       <span>{currentMovie.awards}</span>
                     </div>
                   )}
                 </div>
-              </section>
-            </>
+              </div>
+            </div>
           )}
         </div>
       </div>

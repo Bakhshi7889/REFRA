@@ -120,11 +120,24 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
     }
   }, [isOpen, movie]);
 
-  // Server Tabs matching the reference design
+  // Keyboard shortcut support (Escape to close)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Server Tabs matching the reference design (PenguPlay default, tap All to see all)
   const serverTabs = useMemo(() => {
     return [
-      { id: 'all', name: 'All' },
       { id: 'PenguPlay', name: 'PenguPlay' },
+      { id: 'all', name: 'All' },
       { id: 'HdHub', name: 'HdHub' },
       { id: 'WebStreamrMBG', name: 'WebStreamrMBG' },
       { id: 'Torrentio', name: 'Torrentio' },
