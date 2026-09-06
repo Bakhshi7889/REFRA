@@ -154,6 +154,11 @@ export interface StreamItem {
   sourceHost?: string;
   url: string;
   embedUrl?: string;
+  directProxyUrl?: string;
+  directDownloadUrl?: string;
+  rawDirectUrl?: string | null;
+  isUnder5Gb?: boolean;
+  isBestUnder5Gb?: boolean;
   rawDescription?: string;
   badges: string[];
   languages?: string[];

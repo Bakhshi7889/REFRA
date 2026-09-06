@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Play, Plus, Check, Info, Star, Image as ImageIcon } from 'lucide-react';
+import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, getBackdropUrl, handleImageError } from '../utils/imageHelpers';
@@ -29,6 +29,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const [activeBackdropIdx, setActiveBackdropIdx] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+  const lastWheelTimeRef = useRef(0);
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window !== 'undefined') {
       return window.innerWidth < 640;
@@ -82,17 +83,55 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
     return () => clearInterval(artTimer);
   }, [isActive, activeMovie?.id, activeImageList.length]);
 
+  const handleNext = () => {
+    if (spotlightMovies.length <= 1) return;
+    setCurrentIndex((prev) => (prev + 1) % spotlightMovies.length);
+    setActiveBackdropIdx(0);
+  };
+
+  const handlePrev = () => {
+    if (spotlightMovies.length <= 1) return;
+    setCurrentIndex((prev) => (prev - 1 + spotlightMovies.length) % spotlightMovies.length);
+    setActiveBackdropIdx(0);
+  };
+
   // 2. Switch to different movie every 15 seconds (only when active and tab is visible)
   useEffect(() => {
     if (!isActive || spotlightMovies.length <= 1) return;
     const movieTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      setCurrentIndex((prev) => (prev + 1) % spotlightMovies.length);
-      setActiveBackdropIdx(0);
+      handleNext();
     }, 15000);
 
     return () => clearInterval(movieTimer);
   }, [isActive, spotlightMovies.length, currentIndex]);
+
+  // PC Mouse Wheel Scrolling for Hero Spotlight
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || spotlightMovies.length <= 1) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(delta) > 15) {
+        const now = Date.now();
+        if (now - lastWheelTimeRef.current < 400) {
+          e.preventDefault();
+          return;
+        }
+        e.preventDefault();
+        lastWheelTimeRef.current = now;
+        if (delta > 0) {
+          handleNext();
+        } else {
+          handlePrev();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [spotlightMovies.length]);
 
   // Handle Swipe Gesture
   const handleDragStart = () => {
@@ -102,13 +141,9 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
     const swipeThreshold = 40;
     if (info.offset.x < -swipeThreshold) {
-      // Swiped Left -> Next Movie
-      setCurrentIndex((prev) => (prev + 1) % spotlightMovies.length);
-      setActiveBackdropIdx(0);
+      handleNext();
     } else if (info.offset.x > swipeThreshold) {
-      // Swiped Right -> Prev Movie
-      setCurrentIndex((prev) => (prev - 1 + spotlightMovies.length) % spotlightMovies.length);
-      setActiveBackdropIdx(0);
+      handlePrev();
     }
     setTimeout(() => {
       isDraggingRef.current = false;
@@ -166,6 +201,35 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/45 to-transparent pointer-events-none" />
         <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/75 to-transparent pointer-events-none" />
 
+        {/* Desktop Next and Back Navigation Buttons */}
+        {spotlightMovies.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrev();
+              }}
+              aria-label="Previous movie"
+              className="hidden sm:flex absolute left-3.5 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full liquid-glass text-white/90 hover:text-white hover:bg-white/20 shadow-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 active:scale-95 cursor-pointer items-center justify-center border border-white/10"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNext();
+              }}
+              aria-label="Next movie"
+              className="hidden sm:flex absolute right-3.5 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full liquid-glass text-white/90 hover:text-white hover:bg-white/20 shadow-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 active:scale-95 cursor-pointer items-center justify-center border border-white/10"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </>
+        )}
+
         {/* Top Controls: Artwork Switcher without surrounding lines */}
         {activeImageList.length > 1 && (
           <div className="absolute top-3 right-3 pointer-events-auto z-20">
@@ -186,23 +250,6 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
         {/* ALL TEXT & CONTROLS DIRECTLY ON THE CANVAS (NO SEPARATE BLACK BOX) */}
         <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-10 z-20 flex flex-col gap-2.5 pointer-events-auto">
-          {/* Metadata Row directly on canvas */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold liquid-glass text-white shadow-sm">
-              {activeMovie.releaseYear}
-            </span>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium liquid-glass text-neutral-300 shadow-sm">
-              {activeMovie.duration}
-            </span>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold liquid-glass text-white flex items-center gap-1 shadow-sm">
-              <Star className="w-3 h-3 fill-white text-white" />
-              {activeMovie.score}
-            </span>
-            <span className="text-xs text-neutral-300 font-light truncate drop-shadow">
-              {activeMovie.genres.slice(0, 2).join(' • ')}
-            </span>
-          </div>
-
           {/* Movie Title directly on canvas */}
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate">
             {activeMovie.title}
@@ -266,24 +313,25 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             </motion.button>
           </div>
 
-          {/* Carousel Pagination Dots */}
-          <div className="flex items-center justify-center gap-1.5 mt-1">
+          {/* Carousel Pagination Dots ("just show dots") */}
+          <div className="flex items-center justify-center gap-2 mt-1">
             {spotlightMovies.map((m, idx) => (
               <button
                 key={m.id}
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setCurrentIndex(idx);
                   setActiveBackdropIdx(0);
                 }}
-                className="p-1"
+                className="p-1 cursor-pointer"
                 aria-label={`Go to slide ${idx + 1}`}
               >
                 <div
-                  className={`h-1 rounded-full transition-all duration-300 ${
+                  className={`w-2 h-2 rounded-full transition-all duration-300 ${
                     idx === currentIndex
-                      ? 'w-5 bg-white shadow-sm'
-                      : 'w-1.5 bg-white/30 hover:bg-white/60'
+                      ? 'bg-white scale-125 shadow-[0_0_8px_rgba(255,255,255,0.85)]'
+                      : 'bg-white/30 hover:bg-white/60'
                   }`}
                 />
               </button>

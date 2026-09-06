@@ -7,8 +7,10 @@ import {
   computeStreamScore,
   getProviderLogo,
   generateFallbackStreams,
+  isStreamMatchingCurrentMovie,
 } from '../utils/streamHelpers';
 import { ProviderLogo } from './ProviderLogo';
+import { lockScroll } from '../utils/scrollLock';
 
 interface StreamServerSelectorModalProps {
   movie: Movie | null;
@@ -82,7 +84,8 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         if (Array.isArray(data.streams) && data.streams.length > 0) {
-          setStreams(data.streams);
+          const verified = data.streams.filter((s: StreamItem) => isStreamMatchingCurrentMovie(s, movie.title));
+          setStreams(verified.length > 0 ? verified : generateFallbackStreams(movie, episodeIndex));
         } else {
           setStreams(generateFallbackStreams(movie, episodeIndex));
         }
@@ -106,16 +109,12 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
     }
   }, [isOpen, movie, fetchStreams]);
 
-  // Lock background scroll to prevent behind-screen scrollbar movement
+  // Lock background scroll cleanly with reference counting
   useEffect(() => {
     if (isOpen && movie) {
-      const prevOverflow = document.body.style.overflow;
-      const prevOverscroll = document.body.style.overscrollBehavior;
-      document.body.style.overflow = 'hidden';
-      document.body.style.overscrollBehavior = 'contain';
+      const unlock = lockScroll();
       return () => {
-        document.body.style.overflow = prevOverflow;
-        document.body.style.overscrollBehavior = prevOverscroll;
+        unlock();
       };
     }
   }, [isOpen, movie]);
@@ -133,11 +132,11 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Server Tabs matching the reference design (PenguPlay default, tap All to see all)
+  // Server Tabs matching the reference design (All and Pengu, tap to filter)
   const serverTabs = useMemo(() => {
     return [
-      { id: 'PenguPlay', name: 'PenguPlay' },
       { id: 'all', name: 'All' },
+      { id: 'PenguPlay', name: 'Pengu' },
       { id: 'HdHub', name: 'HdHub' },
       { id: 'WebStreamrMBG', name: 'WebStreamrMBG' },
       { id: 'Torrentio', name: 'Torrentio' },
@@ -257,7 +256,7 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
             initial={{ opacity: 0, y: 24, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 26, mass: 0.8 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 0.8 }}
             className="w-full lg:w-[620px] max-w-2xl flex-1 min-h-0 lg:h-[88vh] lg:max-h-[820px] bg-black/65 backdrop-blur-2xl border border-white/10 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col relative overflow-hidden"
           >
             {/* 1. Resume Pill Button */}

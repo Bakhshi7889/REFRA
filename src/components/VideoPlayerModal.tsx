@@ -30,6 +30,7 @@ import {
   Volume2,
   Languages,
   RotateCcw,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, AnimeEpisode, StreamItem } from '../types';
@@ -42,8 +43,11 @@ import {
   getStreamBytes,
   parseStreamSpecBadges,
   generateFallbackStreams,
+  isStreamMatchingCurrentMovie,
 } from '../utils/streamHelpers';
 import { ProviderLogo } from './ProviderLogo';
+import { DownloadStreamModal } from './DownloadStreamModal';
+import { lockScroll } from '../utils/scrollLock';
 
 export interface StreamFilters {
   provider: string; // 'All' | provider name
@@ -53,10 +57,10 @@ export interface StreamFilters {
 }
 
 export const DEFAULT_STREAM_FILTERS: StreamFilters = {
-  provider: 'PenguPlay',
+  provider: 'All',
   quality: 'All',
   language: 'All',
-  sizeRange: 'All',
+  sizeRange: '<5GB',
 };
 
 export const renderProviderLogo = (
@@ -113,23 +117,25 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [appliedFilters, setAppliedFilters] = useState<StreamFilters>(DEFAULT_STREAM_FILTERS);
   const [pendingFilters, setPendingFilters] = useState<StreamFilters>(DEFAULT_STREAM_FILTERS);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
-  // Prevent background scrolling and scrollbar jitter when modal is open
+  // Best stream under 5GB determination
+  const bestUnder5GbStream = useMemo(() => {
+    const under5Gb = streams.filter((s) => {
+      const bytes = getStreamBytes(s);
+      const gb = bytes / (1024 * 1024 * 1024);
+      return gb > 0 && gb < 5;
+    });
+    if (under5Gb.length === 0) return null;
+    return [...under5Gb].sort((a, b) => computeStreamScore(b) - computeStreamScore(a))[0];
+  }, [streams]);
+
+  // Prevent background scrolling cleanly when player modal is open
   useEffect(() => {
     if (!isOpen) return;
-
-    const originalBodyOverflow = document.body.style.overflow;
-    const originalHtmlOverflow = document.documentElement.style.overflow;
-    const originalBodyOverscroll = document.body.style.overscrollBehavior;
-
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overscrollBehavior = 'none';
-
+    const unlock = lockScroll();
     return () => {
-      document.body.style.overflow = originalBodyOverflow;
-      document.documentElement.style.overflow = originalHtmlOverflow;
-      document.body.style.overscrollBehavior = originalBodyOverscroll;
+      unlock();
     };
   }, [isOpen]);
 
@@ -160,12 +166,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
   // Clean IDs for standard video embeds fallback
   const cleanTmdbId = useMemo(() => {
-    if (!movie) return '550';
-    return movie.tmdbId ? String(movie.tmdbId).replace(/^tmdb_/, '') : '550';
+    if (!movie) return '';
+    if (movie.tmdbId) return String(movie.tmdbId).replace(/^tmdb_/, '');
+    if (movie.id && /^[0-9]+$/.test(String(movie.id))) return String(movie.id);
+    return '';
   }, [movie]);
 
   const cleanImdbId = useMemo(() => {
-    return movie?.imdbId || 'tt0137523';
+    return movie?.imdbId || '';
   }, [movie]);
 
   const isSeries = useMemo(() => {
@@ -252,7 +260,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
     const type = movie.mediaType || (movie.genres.includes('Animation') ? 'anime' : 'movie');
     const episodeNum = movie.episodes?.[currentEpisodeIndex]?.number || currentEpisodeIndex + 1;
-    const streamUrl = `/api/streams?id=${encodeURIComponent(movie.id)}&type=${type}&title=${encodeURIComponent(movie.title)}&year=${movie.releaseYear}&season=1&episode=${episodeNum}`;
+    const streamUrl = `/api/streams?id=${encodeURIComponent(movie.id)}&imdbId=${encodeURIComponent(movie.imdbId || '')}&tmdbId=${encodeURIComponent(movie.tmdbId ? String(movie.tmdbId) : '')}&type=${type}&title=${encodeURIComponent(movie.title)}&year=${movie.releaseYear || ''}&season=1&episode=${episodeNum}`;
 
     fetch(streamUrl)
       .then((res) => {
@@ -264,9 +272,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       })
       .then((data) => {
         if (isCancelled) return;
-        let list: StreamItem[] = Array.isArray(data.streams) && data.streams.length > 0
+        const rawList: StreamItem[] = Array.isArray(data.streams) && data.streams.length > 0
           ? data.streams
           : generateFallbackStreams(movie, currentEpisodeIndex);
+        // Strict verification: only retain streams matching the selected movie
+        let list = rawList.filter((s) => isStreamMatchingCurrentMovie(s, movie.title));
+        if (list.length === 0) {
+          list = generateFallbackStreams(movie, currentEpisodeIndex);
+        }
         setStreams(list);
         setIsLoadingStreams(false);
 
@@ -278,15 +291,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             `${selectedStream.quality || '4K'} • ${selectedStream.fileSize || 'Ultra High Definition'}`
           );
         } else if (list.length > 0) {
-          // AUTO-SELECT THE BEST STREAM (Prioritize default PenguPlay)
-          const penguList = list.filter((s) => (s.serverName || '').toLowerCase().includes('pengu'));
-          const candidates = penguList.length > 0 ? penguList : list;
+          // AUTO-SELECT THE BEST STREAM: Prioritize best stream under 5GB per user request
+          const under5Gb = list.filter((s) => {
+            const bytes = getStreamBytes(s);
+            const gb = bytes / (1024 * 1024 * 1024);
+            return gb > 0 && gb < 5;
+          });
+          const candidates = under5Gb.length > 0 ? under5Gb : list;
           const ranked = [...candidates].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
           const best = ranked[0];
           setActiveStream(best);
           showToast(
-            `✨ Auto-selected best stream: ${best.serverName || 'PenguPlay'}`,
-            `${best.quality || '4K'} • ${best.fileSize || 'Ultra Bitrate'}`
+            `✨ Best Stream (< 5GB): ${best.serverName || 'PenguPlay'}`,
+            `${best.quality || '4K'} • ${best.fileSize || '< 5GB'} (Ranked #1)`
           );
         } else {
           // Fallback to first high-speed CDN mirror
@@ -304,14 +321,18 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         if (selectedStream) {
           setActiveStream(selectedStream);
         } else if (list.length > 0) {
-          const penguList = list.filter((s) => (s.serverName || '').toLowerCase().includes('pengu'));
-          const candidates = penguList.length > 0 ? penguList : list;
+          const under5Gb = list.filter((s) => {
+            const bytes = getStreamBytes(s);
+            const gb = bytes / (1024 * 1024 * 1024);
+            return gb > 0 && gb < 5;
+          });
+          const candidates = under5Gb.length > 0 ? under5Gb : list;
           const ranked = [...candidates].sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
           const best = ranked[0];
           setActiveStream(best);
           showToast(
-            `✨ Auto-selected best stream: ${best.serverName || 'PenguPlay'}`,
-            `${best.quality || '4K'} • ${best.fileSize || 'Ultra Bitrate'}`
+            `✨ Best Stream (< 5GB): ${best.serverName || 'PenguPlay'}`,
+            `${best.quality || '4K'} • ${best.fileSize || '< 5GB'} (Ranked #1)`
           );
         } else {
           const defaultMirror = fallbackMirrors[0];
@@ -431,10 +452,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return list;
   }, [streams, appliedFilters, matchesFilters]);
 
-  // Determine active playing stream URL
+  // Determine active playing stream URL (Strictly for video streaming; never initiates file download)
   const activeStreamUrl = useMemo(() => {
-    if (activeStream?.url || activeStream?.embedUrl) {
-      return activeStream.url || activeStream.embedUrl;
+    if (activeStream?.embedUrl) {
+      return activeStream.embedUrl;
+    }
+    if (activeStream?.url && !activeStream.url.startsWith('magnet:') && !activeStream.url.includes('download=1')) {
+      return activeStream.url;
     }
     return fallbackMirrors[0]?.url;
   }, [activeStream, fallbackMirrors]);
@@ -547,17 +571,21 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           }
           break;
 
-        case 'ArrowUp': // Volume +10%
-          e.preventDefault();
-          if (videoRef.current) {
-            videoRef.current.volume = Math.min(1, videoRef.current.volume + 0.1);
+        case 'ArrowUp': // Volume +10% when fullscreen, allow smooth scrolling on PC otherwise
+          if (isFullscreen) {
+            e.preventDefault();
+            if (videoRef.current) {
+              videoRef.current.volume = Math.min(1, videoRef.current.volume + 0.1);
+            }
           }
           break;
 
-        case 'ArrowDown': // Volume -10%
-          e.preventDefault();
-          if (videoRef.current) {
-            videoRef.current.volume = Math.max(0, videoRef.current.volume - 0.1);
+        case 'ArrowDown': // Volume -10% when fullscreen, allow smooth scrolling on PC otherwise
+          if (isFullscreen) {
+            e.preventDefault();
+            if (videoRef.current) {
+              videoRef.current.volume = Math.max(0, videoRef.current.volume - 0.1);
+            }
           }
           break;
 
@@ -645,9 +673,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div
+      <motion.div
         ref={containerRef}
-        className={`fixed inset-0 z-[75] text-white flex flex-col select-none overflow-hidden overscroll-none ${
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 0.8 }}
+        className={`fixed inset-0 z-[75] bg-[#08090d] text-white flex flex-col select-none overflow-hidden overscroll-none ${
           isRotatedLandscape
             ? 'rotate-90 origin-center w-[100dvh] h-[100dvw] fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
             : 'w-full h-full'
@@ -655,37 +687,41 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       >
         {/* ================= ATMOSPHERIC MOVIE ARTWORK AMBIENT BACKDROP BLUR ================= */}
         <div
-          className="absolute inset-0 pointer-events-none overflow-hidden z-0"
+          className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-[#08090d]"
           style={{ transform: 'translateZ(0)' }}
         >
-          {currentMovie.backdropUrl && (
-            <img
-              src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
-              alt=""
-              className="w-full h-full object-cover filter blur-3xl scale-110 opacity-30 brightness-75"
-              style={{ willChange: 'transform' }}
-            />
-          )}
-          <div className="absolute inset-0 bg-[#08090d]/85" />
+          <img
+            src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
+            alt=""
+            className="w-full h-full object-cover filter blur-[70px] sm:blur-[90px] scale-125 opacity-55 saturate-[175%] brightness-[0.75]"
+            style={{ willChange: 'transform' }}
+          />
+          {/* Layered cinematic atmospheric vignette that keeps typography crisp while letting the vibrant blur glow */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#08090d]/35 via-[#08090d]/65 to-[#08090d]/92" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgba(8,9,13,0.5)_60%,rgba(8,9,13,0.88)_100%)]" />
         </div>
 
-        {/* ================= FLOATING BACK BUTTON WITH SIGNATURE BLUR ================= */}
+        {/* ================= FLOATING TOP NAVIGATION WITH SIGNATURE BLUR ================= */}
         {!isFullscreen && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Back"
-            title="Back (Esc)"
-            className="fixed top-4 left-4 z-50 w-11 h-11 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md flex items-center justify-center text-white transition-all duration-200 cursor-pointer active:scale-95 shadow-2xl group"
-          >
-            <ArrowLeft className="w-5 h-5 transition-transform group-hover:-translate-x-0.5" />
-          </button>
+          <div className="fixed top-4 inset-x-4 z-50 flex items-center justify-between pointer-events-none">
+            {/* Back Button (Pill) */}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Back"
+              title="Back (Esc)"
+              className="px-4 py-2 rounded-full liquid-glass hover:bg-white/20 backdrop-blur-md flex items-center gap-2 text-sm font-medium text-white transition-all duration-200 cursor-pointer active:scale-95 shadow-2xl border border-white/10 group pointer-events-auto"
+            >
+              <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+              <span>Back</span>
+            </button>
+          </div>
         )}
 
         {/* ================= MAIN SCROLLABLE STREAMING PAGE CONTENT ================= */}
         <div
           onMouseMove={handleMouseMove}
-          className={`relative z-10 flex-1 overflow-y-auto hide-scrollbar overscroll-contain ${
+          className={`relative z-10 flex-1 overflow-y-auto desktop-scrollbar overscroll-contain ${
             isFullscreen
               ? 'p-0 flex items-center justify-center'
               : 'px-3 sm:px-6 lg:px-8 pt-16 pb-14 space-y-6 max-w-6xl mx-auto w-full'
@@ -843,48 +879,36 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         className="overflow-hidden bg-black/40 backdrop-blur-xl"
                       >
                         <div className="p-3 sm:p-3.5 space-y-3 bg-black/20">
-                        {/* Top Quick Server Mode Toggle: PenguPlay (Default) vs All Sources */}
-                        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAppliedFilters((f) => ({ ...f, provider: 'PenguPlay' }));
-                              setPendingFilters((f) => ({ ...f, provider: 'PenguPlay' }));
-                            }}
-                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                              appliedFilters.provider.toLowerCase().includes('pengu')
-                                ? 'bg-white text-black shadow-sm'
-                                : 'text-neutral-300 hover:text-white'
-                            }`}
-                          >
-                            <ProviderLogo serverName="PenguPlay" className="w-4 h-4 shrink-0" />
-                            <span>PenguPlay</span>
-                            <span className="text-[10px] opacity-75">(Default)</span>
-                          </button>
-
+                        {/* Unified Server Mode Toggle: All & Pengu without tags */}
+                        <div className="inline-flex items-center p-1 rounded-full bg-white/[0.06] border border-white/10">
                           <button
                             type="button"
                             onClick={() => {
                               setAppliedFilters((f) => ({ ...f, provider: 'All' }));
                               setPendingFilters((f) => ({ ...f, provider: 'All' }));
                             }}
-                            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center justify-center cursor-pointer select-none active:scale-[0.96] ${
                               appliedFilters.provider === 'All'
                                 ? 'bg-white text-black shadow-sm'
                                 : 'text-neutral-300 hover:text-white'
                             }`}
                           >
-                            <Layers className="w-4 h-4 shrink-0" />
-                            <span>All Sources</span>
-                            <span
-                              className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                                appliedFilters.provider === 'All'
-                                  ? 'bg-black/15 text-black'
-                                  : 'bg-white/10 text-neutral-300'
-                              }`}
-                            >
-                              {streams.length}
-                            </span>
+                            <span>All</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppliedFilters((f) => ({ ...f, provider: 'PenguPlay' }));
+                              setPendingFilters((f) => ({ ...f, provider: 'PenguPlay' }));
+                            }}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center justify-center cursor-pointer select-none active:scale-[0.96] ${
+                              appliedFilters.provider.toLowerCase().includes('pengu')
+                                ? 'bg-white text-black shadow-sm'
+                                : 'text-neutral-300 hover:text-white'
+                            }`}
+                          >
+                            <span>Pengu</span>
                           </button>
                         </div>
 
@@ -1315,10 +1339,17 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                 >
                                   {/* Left Details: BIG Movie Name and Squircle Specs Badges (min-w-0 flex-1 pr-2 prevents overlapping) */}
                                   <div className="min-w-0 flex-1 pr-2 space-y-1.5">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate leading-snug">
                                         {s.movieName || s.title || currentMovie.title}
                                       </h4>
+
+                                      {/* Highlight Best Under 5GB Stream */}
+                                      {s.id === bestUnder5GbStream?.id && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
+                                          <span>★ Best &lt; 5GB</span>
+                                        </span>
+                                      )}
                                     </div>
 
                                     {/* Specs Badges: Sharp curved edges (rounded-[4px]), full white back for best, gap in between */}
@@ -1345,8 +1376,21 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     )}
                                   </div>
 
-                                  {/* Right side: Provider Logo & Selection Checkmark ONLY (NO play icon) */}
+                                  {/* Right side: Download action + Provider Logo & Selection Checkmark */}
                                   <div className="shrink-0 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveStream(s);
+                                        setIsDownloadModalOpen(true);
+                                      }}
+                                      title="Download this stream"
+                                      className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/20 text-neutral-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+
                                     <ProviderLogo
                                       serverName={s.serverName}
                                       logoUrl={s.serverLogo}
@@ -1719,27 +1763,28 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   </div>
 
                   {/* Production Companies */}
-                  {currentMovie.productionCompaniesList && currentMovie.productionCompaniesList.length > 0 && (
+                  {currentMovie.productionCompaniesList && currentMovie.productionCompaniesList.some((c) => c.logoUrl) && (
                     <div className="pt-2">
                       <div className="text-[11px] text-neutral-400 uppercase tracking-wider font-semibold mb-2">
                         Production Studios
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {currentMovie.productionCompaniesList.map((comp) => (
-                          <div
-                            key={comp.name}
-                            className="px-2.5 py-1 rounded-xl bg-white/[0.04] flex items-center gap-1.5"
-                          >
-                            {comp.logoUrl && (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {currentMovie.productionCompaniesList.map((comp) => {
+                          if (!comp.logoUrl) return null;
+                          return (
+                            <div
+                              key={comp.name}
+                              title={comp.name}
+                              className="px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-lg"
+                            >
                               <img
                                 src={comp.logoUrl}
                                 alt={comp.name}
-                                className="h-3 max-w-[44px] object-contain filter invert brightness-200"
+                                className="h-10 sm:h-12 max-w-[140px] object-contain filter invert brightness-200"
                               />
-                            )}
-                            <span className="text-[11px] font-semibold text-neutral-200">{comp.name}</span>
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1784,7 +1829,16 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             </div>
           )}
         </div>
-      </div>
+
+        {/* Dedicated Stream Download Modal */}
+        <DownloadStreamModal
+          isOpen={isDownloadModalOpen}
+          onClose={() => setIsDownloadModalOpen(false)}
+          stream={activeStream}
+          movie={currentMovie}
+          availableStreams={streams}
+        />
+      </motion.div>
     </AnimatePresence>
   );
 };

@@ -30,6 +30,8 @@ import {
   getIndexedDbWatchlist,
   saveIndexedDbWatchlist,
   saveIndexedDbHistoryItem,
+  getIndexedDbHistory,
+  HistoryItem,
 } from './services/indexedDb';
 import { scrobbleToTrakt } from './services/traktApi';
 import {
@@ -48,6 +50,7 @@ import {
   trackWatchlistAction,
   trackThemeSelection,
 } from './services/analytics';
+import { forceUnlockScroll } from './utils/scrollLock';
 
 export default function App() {
   const [cachedData] = useState(() => getValid6HourCache());
@@ -127,6 +130,13 @@ export default function App() {
     trackPageView(`Refra - ${tabName}`, `/${activeTab === 'home' ? '' : activeTab}`);
   }, [activeTab]);
 
+  // Guarantee page scrolling is never locked when all modals are closed
+  useEffect(() => {
+    if (!selectedMovie && !playingMovie && !serverSelectorMovie) {
+      forceUnlockScroll();
+    }
+  }, [selectedMovie, playingMovie, serverSelectorMovie]);
+
   const handleThemeChange = (newConfig: UiThemeConfig) => {
     setThemeConfig(newConfig);
     saveThemeConfig(newConfig);
@@ -143,7 +153,23 @@ export default function App() {
     }
   });
 
-  // Load from IndexedDB on initial mount
+  // Persistent watch history state
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+
+  // Load history from IndexedDB on initial mount
+  useEffect(() => {
+    let isMounted = true;
+    getIndexedDbHistory().then((items) => {
+      if (isMounted && items && items.length > 0) {
+        setHistoryItems(items);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Load watchlist from IndexedDB on initial mount
   useEffect(() => {
     let isMounted = true;
     getIndexedDbWatchlist().then((list) => {
@@ -253,6 +279,41 @@ export default function App() {
     };
   }, []);
 
+  // Handle shared link with ?movie=<id> to automatically open movie info and autoplay trailer
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedMovieId = params.get('movie') || params.get('id');
+    if (!sharedMovieId) return;
+
+    const allCurrentMovies = [
+      ...spotlightMovies,
+      ...trendingMovies,
+      ...animeMovies,
+      ...topRatedMovies,
+      ...scifiMovies,
+      ...actionMovies,
+      ...thrillerMovies,
+      ...FALLBACK_MOVIES,
+    ];
+
+    const match = allCurrentMovies.find(
+      (m) => m.id === sharedMovieId || m.id === `tmdb_${sharedMovieId}`
+    );
+    if (match) {
+      setSelectedMovie(match);
+      setAutoPlayDetails(true);
+    }
+  }, [
+    spotlightMovies,
+    trendingMovies,
+    animeMovies,
+    topRatedMovies,
+    scifiMovies,
+    actionMovies,
+    thrillerMovies,
+  ]);
+
   // Handle live search
   useEffect(() => {
     let isMounted = true;
@@ -307,6 +368,62 @@ export default function App() {
     actionMovies,
     thrillerMovies,
   ]);
+
+  // Unified Continue Watching queue dynamically synced with persistent IndexedDB history
+  const continueWatchingMovies = useMemo(() => {
+    const list: Movie[] = [];
+    historyItems.forEach((hist) => {
+      const existing = allMoviesMap.get(hist.movieId);
+      if (existing) {
+        list.push({
+          ...existing,
+          progress: {
+            percentage: hist.progressPercent || 35,
+            timeLeft: hist.durationString || '24m left',
+            lastWatched: 'Recently',
+          },
+        });
+      } else {
+        list.push({
+          id: hist.movieId,
+          title: hist.title,
+          tagline: '',
+          certification: 'PG-13',
+          releaseYear: 2024,
+          duration: hist.durationString || '2h 10m',
+          score: '8.8',
+          genres: ['Sci-Fi', 'Drama'],
+          synopsis: `Continue watching ${hist.title}.`,
+          director: 'Refra Cinema',
+          cast: [],
+          posterUrl: hist.posterUrl || '',
+          backdropUrl: hist.backdropUrl || hist.posterUrl || '',
+          resolution: '4K UHD',
+          audioFormat: 'Dolby Atmos',
+          progress: {
+            percentage: hist.progressPercent || 35,
+            timeLeft: hist.durationString || '24m left',
+            lastWatched: 'Recently',
+          },
+        });
+      }
+    });
+
+    // If history is empty on initial install, curate top premiere titles with progress so section is immediately populated
+    if (list.length === 0) {
+      const candidates = (trendingMovies.length > 0 ? trendingMovies : FALLBACK_MOVIES).slice(0, 3);
+      return candidates.map((m, idx) => ({
+        ...m,
+        progress: {
+          percentage: idx === 0 ? 68 : idx === 1 ? 42 : 85,
+          timeLeft: idx === 0 ? '45m left' : idx === 1 ? '1h 12m left' : '18m left',
+          lastWatched: idx === 0 ? 'Yesterday' : '2 days ago',
+        },
+      }));
+    }
+
+    return list;
+  }, [historyItems, allMoviesMap, trendingMovies]);
 
   const toggleWatchlist = (movieId: string) => {
     const isAdding = !watchlist.includes(movieId);
@@ -363,6 +480,25 @@ export default function App() {
   };
 
   const handleStreamProgressUpdate = (movieId: string, progressPercent: number, timeLeft: string) => {
+    const movie = allMoviesMap.get(movieId) || playingMovie;
+    if (movie) {
+      const updatedItem: HistoryItem = {
+        id: `hist_${movieId}`,
+        movieId,
+        title: movie.title,
+        posterUrl: movie.posterUrl,
+        backdropUrl: movie.backdropUrl,
+        progressPercent,
+        durationString: timeLeft,
+        lastWatchedTimestamp: Date.now(),
+      };
+      saveIndexedDbHistoryItem(updatedItem);
+      setHistoryItems((prev) => {
+        const filtered = prev.filter((h) => h.movieId !== movieId);
+        return [updatedItem, ...filtered];
+      });
+    }
+
     const updater = (prevList: Movie[]) =>
       prevList.map((m) =>
         m.id === movieId
@@ -455,10 +591,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Universal Screen Container: Fluid on Mobile, Centered on PC */}
+      {/* Universal Screen Container: Fluid on Mobile, Expansive on PC/Tablet */}
       <main
         id="refra-app-root"
-        className="w-full max-w-md sm:max-w-xl md:max-w-2xl relative flex flex-col min-h-screen z-10"
+        className="w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8 relative flex flex-col min-h-screen z-10"
         style={{
           backgroundColor: isCustomImageActive ? 'transparent' : activeBgColor,
         }}
@@ -482,9 +618,9 @@ export default function App() {
               />
             )}
 
-            {/* Continue Watching Section */}
+            {/* Continue Watching Section - Connected to persistent watch history */}
             <ContinueWatching
-              movies={spotlightMovies}
+              movies={continueWatchingMovies}
               onResume={handlePlayMovie}
               onOpenDetails={handleOpenDetails}
             />

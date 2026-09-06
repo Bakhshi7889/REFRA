@@ -43,7 +43,41 @@ export const MovieRow: React.FC<MovieRowProps> = ({
 
   useEffect(() => {
     updateScrollButtons();
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      updateScrollButtons();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [movies]);
+
+  // PC Mouse Wheel Horizontal Scrolling
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const isVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+      const delta = isVertical ? e.deltaY : e.deltaX;
+
+      if (Math.abs(delta) > 2) {
+        const canScroll =
+          (delta > 0 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4) ||
+          (delta < 0 && el.scrollLeft > 4);
+
+        if (canScroll) {
+          e.preventDefault();
+          el.scrollLeft += delta;
+          updateScrollButtons();
+        }
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Mouse Drag-to-scroll
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -73,11 +107,23 @@ export const MovieRow: React.FC<MovieRowProps> = ({
     }
   };
 
-  const scrollByAmount = (amount: number) => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: amount, behavior: 'smooth' });
-      setTimeout(updateScrollButtons, 300);
-    }
+  const scrollByAmount = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+    const step = Math.max(container.clientWidth * 0.75, 320);
+    const targetLeft =
+      direction === 'left'
+        ? Math.max(0, container.scrollLeft - step)
+        : Math.min(container.scrollWidth - container.clientWidth, container.scrollLeft + step);
+
+    container.scrollTo({
+      left: targetLeft,
+      behavior: 'smooth',
+    });
+
+    setTimeout(updateScrollButtons, 150);
+    setTimeout(updateScrollButtons, 350);
+    setTimeout(updateScrollButtons, 600);
   };
 
   return (
@@ -94,12 +140,12 @@ export const MovieRow: React.FC<MovieRowProps> = ({
         </h3>
         
         {/* Desktop Quick Nav Buttons */}
-        <div className="hidden sm:flex items-center gap-1.5 opacity-0 group-hover/section:opacity-100 transition-opacity duration-200">
+        <div className="hidden sm:flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity duration-200">
           <button
             type="button"
             disabled={!canScrollLeft}
-            onClick={() => scrollByAmount(-350)}
-            className="p-1.5 rounded-full bg-[#181a24] hover:bg-[#232738] disabled:opacity-30 disabled:pointer-events-none text-neutral-300 transition-colors cursor-pointer"
+            onClick={() => scrollByAmount('left')}
+            className="p-1.5 rounded-full liquid-glass hover:bg-white/20 disabled:opacity-20 disabled:pointer-events-none text-neutral-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
             aria-label="Scroll left"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -107,8 +153,8 @@ export const MovieRow: React.FC<MovieRowProps> = ({
           <button
             type="button"
             disabled={!canScrollRight}
-            onClick={() => scrollByAmount(350)}
-            className="p-1.5 rounded-full bg-[#181a24] hover:bg-[#232738] disabled:opacity-30 disabled:pointer-events-none text-neutral-300 transition-colors cursor-pointer"
+            onClick={() => scrollByAmount('right')}
+            className="p-1.5 rounded-full liquid-glass hover:bg-white/20 disabled:opacity-20 disabled:pointer-events-none text-neutral-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
             aria-label="Scroll right"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -116,17 +162,41 @@ export const MovieRow: React.FC<MovieRowProps> = ({
         </div>
       </div>
 
-      {/* Posters Carousel with Drag-to-Scroll and Touch Support */}
-      <div
-        ref={scrollRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onScroll={updateScrollButtons}
-        className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
-        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
-      >
+      {/* Carousel Container with Floating Edge Navigation Buttons */}
+      <div className="relative">
+        {canScrollLeft && (
+          <button
+            type="button"
+            onClick={() => scrollByAmount('left')}
+            aria-label="Scroll left"
+            className="hidden sm:flex absolute -left-2 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full liquid-glass text-white shadow-2xl hover:bg-white/25 active:scale-95 transition-all cursor-pointer items-center justify-center border border-white/10 opacity-0 group-hover/section:opacity-100"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        {canScrollRight && (
+          <button
+            type="button"
+            onClick={() => scrollByAmount('right')}
+            aria-label="Scroll right"
+            className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-30 p-2.5 rounded-full liquid-glass text-white shadow-2xl hover:bg-white/25 active:scale-95 transition-all cursor-pointer items-center justify-center border border-white/10 opacity-0 group-hover/section:opacity-100"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Posters Carousel with Drag-to-Scroll and Touch Support */}
+        <div
+          ref={scrollRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onScroll={updateScrollButtons}
+          className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
+          style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+        >
         {movies.map((movie) => {
           const isSaved = watchlist.includes(movie.id);
 
@@ -202,6 +272,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
             </motion.div>
           );
         })}
+        </div>
       </div>
     </section>
   );

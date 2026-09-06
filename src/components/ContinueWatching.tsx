@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Play, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
@@ -23,6 +23,31 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
   const isDraggingRef = useRef(false);
 
   if (inProgressMovies.length === 0) return null;
+
+  // PC Mouse Wheel Horizontal Scrolling
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const isVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+      const delta = isVertical ? e.deltaY : e.deltaX;
+
+      if (Math.abs(delta) > 2) {
+        const canScroll =
+          (delta > 0 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4) ||
+          (delta < 0 && el.scrollLeft > 4);
+
+        if (canScroll) {
+          e.preventDefault();
+          el.scrollLeft += delta;
+        }
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Mouse Drag-to-scroll
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -75,10 +100,10 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
               key={movie.id}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.08, ease: 'easeOut' }}
-              className="flex-shrink-0 w-64 sm:w-72 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
-              onClick={(e) => {
+              className="flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
+              onClick={() => {
                 if (isDraggingRef.current) return;
-                onOpenDetails(movie, e.currentTarget.getBoundingClientRect());
+                onResume(movie);
               }}
             >
               {/* Full Thumbnail */}
@@ -104,7 +129,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
                     e.stopPropagation();
                     onResume(movie);
                   }}
-                  className="w-10 h-10 rounded-full bg-white/95 text-neutral-950 flex items-center justify-center shadow-xl transition-transform"
+                  className="w-11 h-11 rounded-full bg-white text-neutral-950 flex items-center justify-center shadow-xl transition-transform"
                   aria-label={`Resume ${movie.title}`}
                 >
                   <Play className="w-4 h-4 fill-neutral-950 ml-0.5" />

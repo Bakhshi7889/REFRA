@@ -83,9 +83,38 @@
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    
+    <!-- PWA Installation & Native Mobile OS Integration (Android, Windows, Mac, iOS) -->
+    <meta name="theme-color" content="#0c0d10" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Refra" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=Syne:wght@500;700;800&family=Unbounded:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Service Worker Registration for Native Browser PWA Install Criteria -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .then(function(reg) {
+              if (reg.installing) console.log('PWA Service Worker installing');
+              else if (reg.active) console.log('PWA Service Worker active');
+            })
+            .catch(function(err) {
+              console.warn('PWA Service Worker registration error:', err);
+            });
+        });
+      }
+    </script>
+    
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDD1JH8J06"></script>
     <script>
@@ -98,7 +127,7 @@
       });
     </script>
   </head>
-  <body class="bg-[#0c0d10] text-[#f0f2f5] font-sans antialiased selection:bg-neutral-800 selection:text-white overflow-x-hidden min-h-screen">
+  <body class="bg-[#0c0d10] text-[#f0f2f5] font-sans antialiased selection:bg-neutral-800 selection:text-white min-h-screen">
     <!-- SVG Filter for Liquid Glass Optical Distortion -->
     <svg aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden;" version="1.1" xmlns="http://www.w3.org/2000/svg">
       <defs>

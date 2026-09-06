@@ -1,31 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   X,
   Play,
-  Pause,
   Plus,
   Check,
   Star,
-  Volume2,
-  VolumeX,
   Share2,
   Film,
   Image as ImageIcon,
   Video,
   MessageSquare,
-  Sparkles,
   Layers,
-  ChevronDown,
   ArrowLeft,
   Trophy,
   Tv,
   Users,
+  Download,
+  Maximize2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, ExpansionOrigin } from '../types';
 import { getBackdropUrl, getPosterUrl } from '../utils/imageHelpers';
 import { ReviewsSection } from './ReviewsSection';
 import { trackStreamStart } from '../services/analytics';
+import { DownloadExpander } from './DownloadExpander';
+import { ArtworkLightboxModal } from './ArtworkLightboxModal';
+import { lockScroll } from '../utils/scrollLock';
 
 interface MovieDetailsModalProps {
   movie: Movie | null;
@@ -53,15 +53,28 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
   onClose,
   watchlist,
   onToggleWatchlist,
-  autoPlay = false,
+  autoPlay = true,
   onPlayMovie,
 }) => {
-  const [isPlayingTrailer, setIsPlayingTrailer] = useState(autoPlay);
-  const [activeMediaTab, setActiveMediaTab] = useState<'trailer' | 'gallery'>('trailer');
+  // Autoplay trailer on entering info page whenever available
+  const [isPlayingTrailer, setIsPlayingTrailer] = useState(
+    Boolean(movie.trailerYoutubeId)
+  );
+  const [activeMediaTab, setActiveMediaTab] = useState<'trailer' | 'fanart' | 'posters'>(
+    movie.trailerYoutubeId ? 'trailer' : 'fanart'
+  );
   const [contentTab, setContentTab] = useState<'overview' | 'reviews' | 'episodes'>('overview');
-  const [selectedBackdropIndex, setSelectedBackdropIndex] = useState(0);
+  const [selectedFanartIndex, setSelectedFanartIndex] = useState(0);
+  const [selectedPosterIndex, setSelectedPosterIndex] = useState(0);
   const [copiedShare, setCopiedShare] = useState(false);
   const isSaved = watchlist.includes(movie.id);
+
+  // Fullscreen Lightbox Modal state
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [lightboxMode, setLightboxMode] = useState<'fanart' | 'poster'>('fanart');
+
+  // Dedicated scrollable ref for PC mouse wheel & drag support
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Responsive dimensions tracking for fluid origin-to-screen interpolation
   const [dimensions, setDimensions] = useState(() => ({
@@ -80,15 +93,22 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Lock background scroll to prevent behind-screen scrollbar movement
+  // Ensure trailer auto-plays when movie or trailer ID changes
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    const originalOverscroll = document.body.style.overscrollBehavior;
-    document.body.style.overflow = 'hidden';
-    document.body.style.overscrollBehavior = 'contain';
+    if (movie.trailerYoutubeId) {
+      setIsPlayingTrailer(true);
+      setActiveMediaTab('trailer');
+    } else {
+      setIsPlayingTrailer(false);
+      setActiveMediaTab('fanart');
+    }
+  }, [movie.id, movie.trailerYoutubeId]);
+
+  // Lock background scroll cleanly with reference counting
+  useEffect(() => {
+    const unlock = lockScroll();
     return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.overscrollBehavior = originalOverscroll;
+      unlock();
     };
   }, []);
 
@@ -103,7 +123,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
   const targetTop = isMobile ? 0 : (dimensions.height - targetHeight) / 2;
   const targetRadius = isMobile ? 0 : 28;
 
-  // Keyboard shortcut support (Escape to close, Space to play trailer)
+  // Keyboard shortcut support (Escape to close)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -142,25 +162,79 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
 
   const springTransition = {
     type: 'spring' as const,
-    stiffness: 260,
-    damping: 28,
-    mass: 0.75,
+    stiffness: 320,
+    damping: 32,
+    mass: 0.8,
   };
 
   const hasEpisodes = Boolean(movie.episodes && movie.episodes.length > 0);
 
-  const allArtworks = [
-    movie.backdropUrl,
-    ...(movie.backdrops || []),
-    ...(movie.fanart || []),
-  ]
-    .filter((url, idx, arr) => url && arr.indexOf(url) === idx)
-    .map((url) => getBackdropUrl(url, 'w1280', movie.posterUrl));
+  // 16:9 Landscape Fanart / Backdrops / Stills
+  const fanartImages: string[] = useMemo(() => {
+    const raw = [
+      movie.backdropUrl,
+      ...(movie.backdrops || []),
+      ...(movie.fanart || []),
+    ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
+    return raw.map((url) => getBackdropUrl(url, 'original', movie.posterUrl));
+  }, [movie.backdropUrl, movie.backdrops, movie.fanart, movie.posterUrl]);
 
-  const handleShare = () => {
-    navigator.clipboard?.writeText?.(window.location.href);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2000);
+  // 9:16 Portrait Posters
+  const posterImages: string[] = useMemo(() => {
+    const raw = [
+      movie.posterUrl,
+      ...(movie.posters || []),
+    ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
+    return raw.map((url) => getPosterUrl(url, 'original', movie.backdropUrl));
+  }, [movie.posterUrl, movie.posters, movie.backdropUrl]);
+
+  // Share functionality with refra.netlify.app URL and proper tags
+  const handleShare = async () => {
+    const shareUrl = `https://refra.netlify.app/?movie=${encodeURIComponent(movie.id)}&title=${encodeURIComponent(movie.title)}`;
+    const genreTag = (movie.genres?.[0] || 'Cinema').replace(/[^a-zA-Z0-9]/g, '');
+    const shareData = {
+      title: `${movie.title} (${movie.releaseYear}) • Refra Cinema`,
+      text: `Stream ${movie.title} in 4K UHD with Dolby Atmos on Refra Cinema #RefraCinema #Movies #${genreTag}`,
+      url: shareUrl,
+    };
+
+    if (navigator.share && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      navigator.clipboard?.writeText?.(shareUrl);
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2500);
+    }
+  };
+
+  // Direct image download helper for device storage
+  const handleDownloadDirectImage = async (imageUrl: string, filename: string) => {
+    try {
+      const res = await fetch(imageUrl, { mode: 'cors' });
+      if (!res.ok) throw new Error('Fetch failed');
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+    } catch {
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = filename;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   // Touch tracking for mobile sheet slide-down dismissal
@@ -180,17 +254,31 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
     }
   };
 
+  // Direct wheel forwarder to guarantee PC mouse wheel scrolls properly
+  const handleWheel = (e: React.WheelEvent) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop += e.deltaY;
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none">
-      {/* Backdrop Dim Scrim with instant tap-outside dismissal */}
+      {/* Backdrop Dim Scrim with instant tap-outside dismissal + atmospheric ambient movie blur */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
+        transition={{ duration: 0.25, ease: 'easeOut' }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/80 backdrop-blur-md cursor-pointer pointer-events-auto"
-      />
+        className="fixed inset-0 cursor-pointer pointer-events-auto overflow-hidden bg-black/60 backdrop-blur-2xl"
+      >
+        <img
+          src={getBackdropUrl(movie.backdropUrl, 'w1280', movie.posterUrl)}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover filter blur-3xl scale-125 opacity-45 saturate-150 brightness-75 pointer-events-none"
+        />
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-xl pointer-events-none" />
+      </motion.div>
 
       {/* The Poster Card Expanding from its exact origin into the full info container using compositor transforms */}
       <motion.div
@@ -228,53 +316,46 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
           height: targetHeight,
           transformOrigin: '0 0',
         }}
-        className="z-50 overflow-hidden shadow-2xl flex flex-col pointer-events-auto bg-[#0a0c10] border border-white/10 gpu-layer"
+        className="z-50 overflow-hidden shadow-2xl flex flex-col pointer-events-auto bg-[#0a0c10]/80 backdrop-blur-3xl border border-white/10 gpu-layer"
       >
-        {/* The Movie Poster Wallpaper: Stays present behind the info page, beautifully slightly blurred like wallpaper at home */}
+        {/* The Movie Poster / Backdrop Ambient Wallpaper */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           <motion.img
-            src={getPosterUrl(movie.posterUrl, 'w780', movie.backdropUrl)}
+            src={getBackdropUrl(movie.backdropUrl, 'w1280') || getPosterUrl(movie.posterUrl, 'w780')}
             alt=""
             referrerPolicy="no-referrer"
             initial={{
               filter: 'blur(0px) brightness(1)',
-              scale: 1,
+              opacity: 0.8,
             }}
             animate={{
-              filter: 'blur(10px) brightness(0.55) saturate(130%)',
-              scale: 1.05,
+              filter: 'blur(40px) saturate(160%) brightness(0.7)',
+              opacity: 0.65,
             }}
-            exit={{
-              filter: 'blur(0px) brightness(1)',
-              scale: 1,
-              transition: { duration: 0.2 },
-            }}
-            transition={springTransition}
-            className="w-full h-full object-cover gpu-layer"
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="w-full h-full object-cover scale-110"
           />
-          {/* Subtle translucent dark veil so the wallpaper is vibrant and visible everywhere, while all text is razor-sharp */}
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/35 to-black/75 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0a0c10]/95 via-[#0a0c10]/60 to-[#0a0c10]/25" />
         </div>
 
         {/* Content Layer: reveals smoothly as the poster completes its enlargement and blur */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.15 } }}
-          transition={{ delay: 0.06, duration: 0.22, ease: 'easeOut' }}
-          className="relative z-10 flex flex-col h-full overflow-hidden"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, delay: 0.04 }}
+          className="relative z-10 flex flex-col h-full min-h-0 overflow-hidden"
+          onWheel={handleWheel}
         >
-          {/* Top Navigation: Sleek, low-profile & non-protruding */}
-          <div className="pt-2 px-3 pb-1 flex items-center justify-between z-30 shrink-0">
+          {/* Top Navigation */}
+          <div className="flex items-center justify-between px-5 pt-3 pb-2 z-20 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md transition-all active:scale-[0.96] cursor-pointer flex items-center gap-1 border border-white/10"
-              aria-label="Back"
+              className="p-1.5 rounded-full bg-black/40 hover:bg-black/60 text-white/80 hover:text-white backdrop-blur-md transition-all active:scale-[0.96] cursor-pointer border border-white/10"
+              aria-label="Back to Browse"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline pr-1 text-[11px] font-medium">Back</span>
+              <ArrowLeft className="w-4 h-4" />
             </button>
 
             {/* Mobile swipe-down pull indicator */}
@@ -298,259 +379,384 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
             </button>
           </div>
 
-          {/* Scrollable Content */}
-          <div className="overflow-y-auto hide-scrollbar overscroll-contain flex-1 pb-8">
-          {/* Cinematic Stage: Real YouTube/KinoCheck Trailer or Fanart Viewer */}
-          <div className="relative mx-4 mt-1 aspect-[16/9] rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/10 shrink-0">
-            {isPlayingTrailer && movie.trailerYoutubeId ? (
-              <iframe
-                src={`https://www.youtube.com/embed/${movie.trailerYoutubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
-                title={`${movie.title} Official Trailer`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
-            ) : (
-              <>
-                <img
-                  src={allArtworks[selectedBackdropIndex] || movie.backdropUrl}
-                  alt={movie.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
+          {/* Scrollable Content Container with PC Smooth Scrollbar */}
+          <div
+            ref={scrollContainerRef}
+            className="overflow-y-auto desktop-scrollbar overscroll-contain flex-1 min-h-0 pb-12"
+          >
+            {/* Cinematic Stage: Trailer (Autoplay) OR 16:9 Fanart OR 9:16 Posters */}
+            {activeMediaTab === 'trailer' && movie.trailerYoutubeId ? (
+              <div className="relative mx-4 mt-1 aspect-[16/9] rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/10 shrink-0">
+                <iframe
+                  src={`https://www.youtube.com/embed/${movie.trailerYoutubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+                  title={`${movie.title} Official Trailer`}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
-
-                {/* Center Play Trailer Button */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <motion.button
-                    whileTap={{ scale: 0.96 }}
-                    whileHover={{ scale: 1.05 }}
-                    type="button"
-                    onClick={() => setIsPlayingTrailer(true)}
-                    className="w-14 h-14 rounded-full bg-white/95 hover:bg-white text-neutral-950 flex items-center justify-center shadow-2xl transition-all cursor-pointer"
-                    aria-label="Play Trailer"
-                  >
-                    <Play className="w-6 h-6 fill-neutral-950 ml-0.5" />
-                  </motion.button>
-                </div>
-              </>
-            )}
-
-            {/* Badges on stage */}
-            <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20 pointer-events-none">
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-black/65 text-neutral-200 backdrop-blur-md border border-white/10">
-                {movie.resolution}
-              </span>
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-black/65 text-neutral-300 backdrop-blur-md border border-white/10">
-                {movie.audioFormat}
-              </span>
-            </div>
-          </div>
-
-          {/* Media Mode Pill Selector */}
-          {allArtworks.length > 1 && (
-            <div className="px-5 pt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveMediaTab('trailer');
-                  setIsPlayingTrailer(true);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer border ${
-                  activeMediaTab === 'trailer'
-                    ? 'bg-neutral-200 text-neutral-950 font-semibold border-white/20'
-                    : 'bg-black/40 text-neutral-400 hover:text-white border-white/10 backdrop-blur-md'
-                }`}
-              >
-                <Video className="w-3.5 h-3.5" />
-                <span>Official Trailer</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveMediaTab('gallery');
-                  setIsPlayingTrailer(false);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer border ${
-                  activeMediaTab === 'gallery'
-                    ? 'bg-neutral-200 text-neutral-950 font-semibold border-white/20'
-                    : 'bg-black/40 text-neutral-400 hover:text-white border-white/10 backdrop-blur-md'
-                }`}
-              >
-                <ImageIcon className="w-3.5 h-3.5" />
-                <span>Fanart & Stills ({allArtworks.length})</span>
-              </button>
-            </div>
-          )}
-
-          {/* If Gallery view is active: show horizontal backdrop switcher */}
-          {activeMediaTab === 'gallery' && allArtworks.length > 1 && (
-            <div className="px-5 pt-2 flex gap-2 overflow-x-auto hide-scrollbar">
-              {allArtworks.map((art, idx) => (
-                <button
-                  key={idx}
-                  type="button"
+              </div>
+            ) : activeMediaTab === 'posters' ? (
+              /* 9:16 Portrait Posters Stage */
+              <div className="relative mx-4 mt-1 flex flex-col items-center">
+                <div
                   onClick={() => {
-                    setSelectedBackdropIndex(idx);
-                    setIsPlayingTrailer(false);
+                    setLightboxMode('poster');
+                    setIsLightboxOpen(true);
                   }}
-                  className={`flex-shrink-0 w-24 aspect-[16/10] rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
-                    selectedBackdropIndex === idx
-                      ? 'border-white scale-102'
-                      : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
+                  className="relative aspect-[9/16] w-52 sm:w-60 rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/15 cursor-pointer group shrink-0"
+                  title="Tap to open full screen and download"
                 >
                   <img
-                    src={art}
-                    alt="Fanart"
+                    src={posterImages[selectedPosterIndex] || movie.posterUrl}
+                    alt={`${movie.title} Official Poster`}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-103"
+                  />
+                  {/* Subtle Overlay Actions (Fullscreen & Download) */}
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const target = posterImages[selectedPosterIndex] || movie.posterUrl;
+                        handleDownloadDirectImage(
+                          target,
+                          `${movie.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_poster_${selectedPosterIndex + 1}_fullres.jpg`
+                        );
+                      }}
+                      className="p-2 rounded-full bg-black/65 hover:bg-black/85 text-white border border-white/15 backdrop-blur-md transition-colors cursor-pointer shadow-lg"
+                      title="Download full resolution poster"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxMode('poster');
+                        setIsLightboxOpen(true);
+                      }}
+                      className="p-2 rounded-full bg-black/65 hover:bg-black/85 text-white border border-white/15 backdrop-blur-md transition-colors cursor-pointer shadow-lg"
+                      title="Open full screen"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 16:9 Landscape Fanart & Stills Stage */
+              <div className="relative mx-4 mt-1 aspect-[16/9] rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/10 shrink-0 group">
+                <img
+                  src={fanartImages[selectedFanartIndex] || movie.backdropUrl}
+                  alt={`${movie.title} Fanart Still`}
+                  referrerPolicy="no-referrer"
+                  onClick={() => {
+                    setLightboxMode('fanart');
+                    setIsLightboxOpen(true);
+                  }}
+                  className="w-full h-full object-cover cursor-pointer transition-transform duration-300 group-hover:scale-102"
+                />
+                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const target = fanartImages[selectedFanartIndex] || movie.backdropUrl;
+                      handleDownloadDirectImage(
+                        target,
+                        `${movie.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_fanart_${selectedFanartIndex + 1}_fullres.jpg`
+                      );
+                    }}
+                    className="p-2 rounded-full bg-black/65 hover:bg-black/85 text-white border border-white/15 backdrop-blur-md transition-colors cursor-pointer shadow-lg"
+                    title="Download full resolution fanart"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLightboxMode('fanart');
+                      setIsLightboxOpen(true);
+                    }}
+                    className="p-2 rounded-full bg-black/65 hover:bg-black/85 text-white border border-white/15 backdrop-blur-md transition-colors cursor-pointer shadow-lg"
+                    title="Open full screen"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Media Mode Pill Selector: Trailer and Merged Horizontal/Vertical Stills & Posters Pill */}
+            <div className="px-5 pt-3 flex items-center gap-2 flex-wrap">
+              {movie.trailerYoutubeId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMediaTab('trailer');
+                    setIsPlayingTrailer(true);
+                  }}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer border ${
+                    activeMediaTab === 'trailer'
+                      ? 'bg-neutral-200 text-neutral-950 font-semibold border-white/20'
+                      : 'bg-black/40 text-neutral-400 hover:text-white border-white/10 backdrop-blur-md'
+                  }`}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Official Trailer</span>
+                </button>
+              )}
+
+              {/* Single Merged Pill for Horizontal (Stills) and Vertical (Posters) */}
+              {(fanartImages.length > 0 || posterImages.length > 0) && (
+                <div className="flex items-center p-0.5 rounded-full bg-black/60 border border-white/15 backdrop-blur-md shadow-sm">
+                  {fanartImages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveMediaTab('fanart');
+                        setIsPlayingTrailer(false);
+                        setLightboxMode('fanart');
+                        setIsLightboxOpen(true);
+                      }}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                        activeMediaTab === 'fanart'
+                          ? 'bg-white text-neutral-950 font-semibold shadow'
+                          : 'text-neutral-400 hover:text-white'
+                      }`}
+                      title="Tap Horizontal to fill and open fullscreen"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>Horizontal</span>
+                    </button>
+                  )}
+
+                  {posterImages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveMediaTab('posters');
+                        setIsPlayingTrailer(false);
+                        setLightboxMode('poster');
+                        setIsLightboxOpen(true);
+                      }}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                        activeMediaTab === 'posters'
+                          ? 'bg-white text-neutral-950 font-semibold shadow'
+                          : 'text-neutral-400 hover:text-white'
+                      }`}
+                      title="Tap Vertical to fill and open fullscreen"
+                    >
+                      <Film className="w-3.5 h-3.5" />
+                      <span>Vertical</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Thumbnail Switcher for Fanart (16:9) */}
+            {activeMediaTab === 'fanart' && fanartImages.length > 1 && (
+              <div className="px-5 pt-2 flex gap-2 overflow-x-auto hide-scrollbar">
+                {fanartImages.map((art, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedFanartIndex(idx);
+                      setIsPlayingTrailer(false);
+                    }}
+                    className={`flex-shrink-0 w-24 aspect-[16/9] rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                      selectedFanartIndex === idx
+                        ? 'border-white scale-102 ring-2 ring-white/40'
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={art}
+                      alt="Fanart"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Thumbnail Switcher for Posters (9:16) */}
+            {activeMediaTab === 'posters' && posterImages.length > 1 && (
+              <div className="px-5 pt-2 flex gap-2 overflow-x-auto hide-scrollbar justify-center sm:justify-start">
+                {posterImages.map((poster, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPosterIndex(idx);
+                      setIsPlayingTrailer(false);
+                    }}
+                    className={`flex-shrink-0 w-14 aspect-[9/16] rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                      selectedPosterIndex === idx
+                        ? 'border-white scale-102 ring-2 ring-white/40'
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img
+                      src={poster}
+                      alt="Poster"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Info Body with Staggered Fluid Reveal */}
+            <div className="px-5 pt-4 space-y-4">
+              {/* Featured Header: Side-by-side Poster & Main Info */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.04, duration: 0.2 }}
+                className="flex gap-4 items-start"
+              >
+                {/* Official Vertical Poster */}
+                <div className="w-24 sm:w-28 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl border border-white/15 shrink-0 relative bg-black/40">
+                  <img
+                    src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
+                    alt={`${movie.title} Poster`}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Info Body with Staggered Fluid Reveal */}
-          <div className="px-5 pt-4 space-y-4">
-            {/* Featured Header: Side-by-side Poster & Main Info */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.04, duration: 0.2 }}
-              className="flex gap-4 items-start"
-            >
-              {/* Official Vertical Poster */}
-              <div className="w-24 sm:w-28 aspect-[2/3] rounded-2xl overflow-hidden shadow-2xl border border-white/15 shrink-0 relative bg-black/40">
-                <img
-                  src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
-                  alt={`${movie.title} Poster`}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-                {movie.badge && (
-                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-black/75 text-white backdrop-blur-md border border-white/10">
-                    {movie.badge}
-                  </span>
-                )}
-              </div>
-
-              {/* Title & Metadata next to poster */}
-              <div className="flex-1 min-w-0 space-y-2">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/15 text-white backdrop-blur-md border border-white/10">
-                    {movie.releaseYear}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-neutral-200 backdrop-blur-md border border-white/5">
-                    {movie.duration}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-neutral-200 backdrop-blur-md border border-white/5">
-                    {movie.certification}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white backdrop-blur-md border border-white/15 flex items-center gap-1">
-                    <Star className="w-2.5 h-2.5 fill-white text-white" />
-                    {movie.score}
-                  </span>
+                  {movie.badge && (
+                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-black/75 text-white backdrop-blur-md border border-white/10">
+                      {movie.badge}
+                    </span>
+                  )}
                 </div>
 
-                <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md">
-                  {movie.title}
-                </h3>
-
-                {movie.japaneseTitle && (
-                  <div className="text-xs text-neutral-300 font-medium">
-                    {movie.japaneseTitle}
+                {/* Title & Metadata next to poster */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/15 text-white backdrop-blur-md border border-white/10">
+                      {movie.releaseYear}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-neutral-200 backdrop-blur-md border border-white/5">
+                      {movie.duration}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/10 text-neutral-200 backdrop-blur-md border border-white/5">
+                      {movie.certification}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white backdrop-blur-md border border-white/15 flex items-center gap-1">
+                      <Star className="w-2.5 h-2.5 fill-white text-white" />
+                      {movie.score}
+                    </span>
                   </div>
-                )}
 
-                {movie.tagline && (
-                  <p className="text-xs text-neutral-300 italic font-light line-clamp-2">
-                    "{movie.tagline}"
-                  </p>
-                )}
+                  <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md">
+                    {movie.title}
+                  </h3>
 
-                <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                  {movie.studios && movie.studios.length > 0 && (
-                    <span className="text-[10px] text-neutral-200 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 font-semibold backdrop-blur-md">
-                      {movie.studios[0]}
-                    </span>
+                  {movie.japaneseTitle && (
+                    <div className="text-xs text-neutral-300 font-medium">
+                      {movie.japaneseTitle}
+                    </div>
                   )}
-                  {movie.totalEpisodes && (
-                    <span className="text-[10px] text-neutral-200 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 font-medium backdrop-blur-md">
-                      {movie.totalEpisodes} Episodes
-                    </span>
+
+                  {movie.tagline && (
+                    <p className="text-xs text-neutral-300 italic font-light line-clamp-2">
+                      "{movie.tagline}"
+                    </p>
                   )}
-                  <span className="text-[10px] text-neutral-300 px-2 py-0.5 rounded-md bg-black/40 border border-white/10 font-medium backdrop-blur-md">
-                    {movie.resolution}
-                  </span>
-                  <span className="text-[10px] text-neutral-300 px-2 py-0.5 rounded-md bg-black/40 border border-white/10 font-medium backdrop-blur-md">
-                    {movie.audioFormat}
-                  </span>
+
+                  <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                    {movie.studios && movie.studios.length > 0 && (
+                      <span className="text-[10px] text-neutral-200 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 font-semibold backdrop-blur-md">
+                        {movie.studios[0]}
+                      </span>
+                    )}
+                    {movie.totalEpisodes && (
+                      <span className="text-[10px] text-neutral-200 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 font-medium backdrop-blur-md">
+                        {movie.totalEpisodes} Episodes
+                      </span>
+                    )}
+                    <span className="text-[10px] text-neutral-300 px-2 py-0.5 rounded-md bg-black/40 border border-white/10 font-medium backdrop-blur-md">
+                      {movie.resolution}
+                    </span>
+                    <span className="text-[10px] text-neutral-300 px-2 py-0.5 rounded-md bg-black/40 border border-white/10 font-medium backdrop-blur-md">
+                      {movie.audioFormat}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
 
-            {/* Action Buttons */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08, duration: 0.2 }}
-              className="flex items-center gap-2.5"
-            >
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                onClick={() => {
-                  onClose();
-                  if (onPlayMovie) {
-                    onPlayMovie(movie);
-                  } else {
-                    setIsPlayingTrailer(true);
-                  }
-                  trackStreamStart({
-                    id: movie.id,
-                    title: movie.title,
-                    sourceServer: movie.resolution || '4K',
-                    isAnime: movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime'),
-                  });
-                }}
-                className="flex-1 py-3 px-5 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2 shadow-xl transition-colors min-h-[46px] cursor-pointer"
+              {/* Action Buttons: Stream Movie, Watchlist, Share */}
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08, duration: 0.2 }}
+                className="flex items-center gap-2.5"
               >
-                <Play className="w-4 h-4 fill-neutral-950" />
-                <span>Stream Movie</span>
-              </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    if (onPlayMovie) {
+                      onPlayMovie(movie);
+                    } else {
+                      setIsPlayingTrailer(true);
+                    }
+                    trackStreamStart({
+                      id: movie.id,
+                      title: movie.title,
+                      sourceServer: movie.resolution || '4K',
+                      isAnime: movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime'),
+                    });
+                  }}
+                  className="flex-1 py-3 px-5 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-sm flex items-center justify-center gap-2 shadow-xl transition-colors min-h-[46px] cursor-pointer"
+                >
+                  <Play className="w-4 h-4 fill-neutral-950" />
+                  <span>Stream Movie</span>
+                </motion.button>
 
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                onClick={() => onToggleWatchlist(movie.id)}
-                className={`p-3 rounded-2xl flex items-center justify-center transition-colors min-h-[46px] min-w-[46px] cursor-pointer border ${
-                  isSaved
-                    ? 'bg-neutral-200 text-neutral-950 border-white/20'
-                    : 'bg-black/40 hover:bg-black/60 text-neutral-200 border-white/15 backdrop-blur-md'
-                }`}
-                aria-label={isSaved ? 'In Watchlist' : 'Add to Watchlist'}
-              >
-                {isSaved ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-              </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  onClick={() => onToggleWatchlist(movie.id)}
+                  className={`p-3 rounded-2xl flex items-center justify-center transition-colors min-h-[46px] min-w-[46px] cursor-pointer border ${
+                    isSaved
+                      ? 'bg-neutral-200 text-neutral-950 border-white/20'
+                      : 'bg-black/40 hover:bg-black/60 text-neutral-200 border-white/15 backdrop-blur-md'
+                  }`}
+                  aria-label={isSaved ? 'In Watchlist' : 'Add to Watchlist'}
+                >
+                  {isSaved ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                </motion.button>
 
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                onClick={handleShare}
-                className="p-3 rounded-2xl bg-black/40 hover:bg-black/60 text-neutral-200 border border-white/15 backdrop-blur-md flex items-center justify-center transition-colors min-h-[46px] min-w-[46px] cursor-pointer"
-                aria-label="Share movie"
-              >
-                <Share2 className="w-5 h-5" />
-              </motion.button>
-            </motion.div>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  onClick={handleShare}
+                  className="p-3 rounded-2xl bg-black/40 hover:bg-black/60 text-neutral-200 border border-white/15 backdrop-blur-md flex items-center justify-center transition-colors min-h-[46px] min-w-[46px] cursor-pointer"
+                  aria-label="Share movie"
+                >
+                  <Share2 className="w-5 h-5" />
+                </motion.button>
+              </motion.div>
 
               {copiedShare && (
                 <div className="text-center py-1 text-xs text-neutral-300 font-medium">
-                  Link copied to clipboard
+                  Refra link copied to clipboard (refra.netlify.app)
                 </div>
               )}
+
+              {/* Single Download Button that Expands to Show Options */}
+              <div className="pt-0.5">
+                <DownloadExpander movie={movie} />
+              </div>
 
               {/* Content Tabs (Overview, Reviews, Episodes) */}
               <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/35 border border-white/10 backdrop-blur-md">
@@ -629,7 +835,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     </p>
                   </div>
 
-                  {/* Official Watch Providers / Where to Stream */}
+                  {/* Where to Watch: Only show clean full logos with NO border around every logo */}
                   {movie.watchProviders && movie.watchProviders.length > 0 && (
                     <div className="p-4 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md space-y-2.5">
                       <div className="flex items-center justify-between">
@@ -639,24 +845,19 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                         </div>
                         <span className="text-[10px] text-neutral-400">Official Platforms</span>
                       </div>
-                      <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pt-1">
+                      <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar pt-1">
                         {movie.watchProviders.map((wp, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/10 border border-white/10 shrink-0 backdrop-blur-sm"
+                            title={`${wp.name} • ${wp.type === 'flatrate' ? 'Subscription' : wp.type || 'Stream'}`}
+                            className="shrink-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105"
                           >
                             <img
                               src={wp.logoUrl}
                               alt={wp.name}
                               referrerPolicy="no-referrer"
-                              className="w-5 h-5 rounded-md object-cover"
+                              className="w-12 h-12 rounded-2xl object-cover shadow-lg"
                             />
-                            <div className="flex flex-col">
-                              <span className="text-xs font-medium text-white whitespace-nowrap">{wp.name}</span>
-                              <span className="text-[9px] text-neutral-400 uppercase tracking-wide">
-                                {wp.type === 'flatrate' ? 'Subscription' : wp.type || 'Stream'}
-                              </span>
-                            </div>
                           </div>
                         ))}
                       </div>
@@ -722,81 +923,99 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     )
                   )}
 
-                  {/* Director & Genres */}
-                  <div className="p-4 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md space-y-2.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs text-neutral-400">Director:</span>
-                      <span className="text-xs font-medium text-white px-2.5 py-0.5 rounded-full bg-white/15 border border-white/10 backdrop-blur-sm">
-                        {movie.director}
-                      </span>
+                  {/* Director & Production */}
+                  <div className="p-4 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md space-y-2 text-xs">
+                    <div className="flex items-center justify-between text-neutral-300">
+                      <span className="text-neutral-400">Director:</span>
+                      <span className="font-semibold text-white">{movie.director}</span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs text-neutral-400">Genres:</span>
-                      {movie.genres.map((genre) => (
-                        <span
-                          key={genre}
-                          className="text-xs font-medium text-neutral-200 px-2.5 py-0.5 rounded-full bg-white/15 border border-white/10 backdrop-blur-sm"
-                        >
-                          {genre}
-                        </span>
-                      ))}
-                    </div>
+                    {movie.productionCompaniesList && movie.productionCompaniesList.some((p) => p.logoUrl) && (
+                      <div className="pt-2 border-t border-white/5 space-y-2">
+                        <span className="text-neutral-400 text-xs">Production:</span>
+                        <div className="flex items-center gap-3 flex-wrap pt-1">
+                          {movie.productionCompaniesList.map((p) => {
+                            if (!p.logoUrl) return null;
+                            return (
+                              <div
+                                key={p.name}
+                                title={p.name}
+                                className="px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-md"
+                              >
+                                <img
+                                  src={p.logoUrl}
+                                  alt={p.name}
+                                  className="h-9 sm:h-11 max-w-[130px] object-contain filter invert brightness-200"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {movie.boxOffice && (
+                      <div className="flex items-center justify-between text-neutral-300 pt-1">
+                        <span className="text-neutral-400">Box Office:</span>
+                        <span className="font-mono text-white">{movie.boxOffice}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Tab 2: Reviews & Jikan Ratings */}
+              {/* Tab 2: Reviews & Jikan Data */}
               {contentTab === 'reviews' && (
-                <ReviewsSection movie={movie} />
+                <ReviewsSection
+                  movieId={movie.id}
+                  movieTitle={movie.title}
+                  malId={movie.malId}
+                  isAnime={movie.genres.includes('Animation') || movie.badge?.toLowerCase().includes('anime')}
+                />
               )}
 
-              {/* Tab 3: Episodes Mapping */}
-              {contentTab === 'episodes' && movie.episodes && movie.episodes.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
-                      Airing Episodes ({movie.episodes.length})
-                    </span>
-                    <span className="text-[10px] text-neutral-400">
-                      Jikan / AniList Feed
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {movie.episodes.map((ep) => (
-                      <button
-                        key={ep.id}
-                        type="button"
-                        onClick={() => {
-                          if (onPlayMovie) {
-                            onPlayMovie(movie, ep.number - 1);
-                          } else {
-                            setIsPlayingTrailer(true);
-                          }
-                        }}
-                        className="p-3 rounded-2xl bg-black/35 hover:bg-black/50 border border-white/10 text-left transition-colors cursor-pointer group flex items-start justify-between gap-2 backdrop-blur-md"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2 text-[10px] text-neutral-400 mb-0.5">
-                            <span className="font-bold text-white px-1.5 py-0.5 rounded bg-white/15">EP {ep.number}</span>
-                            <span>{ep.duration || '24m'}</span>
-                          </div>
-                          <div className="text-xs font-medium text-neutral-200 group-hover:text-white line-clamp-1">
-                            {ep.title}
-                          </div>
+              {/* Tab 3: Episodes */}
+              {contentTab === 'episodes' && hasEpisodes && (
+                <div className="space-y-2">
+                  {movie.episodes?.map((ep, idx) => (
+                    <div
+                      key={ep.id}
+                      onClick={() => {
+                        onClose();
+                        if (onPlayMovie) onPlayMovie(movie, idx);
+                      }}
+                      className="p-3 rounded-2xl bg-black/35 hover:bg-black/55 border border-white/10 backdrop-blur-md flex items-center justify-between gap-3 cursor-pointer transition-colors group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-white/10 group-hover:bg-white text-white group-hover:text-black flex items-center justify-center font-bold text-xs shrink-0 transition-colors">
+                          {ep.number}
                         </div>
-                        <div className="p-2 rounded-xl bg-white/10 group-hover:bg-white text-neutral-300 group-hover:text-neutral-950 transition-colors shrink-0">
-                          <Play className="w-3 h-3 fill-current" />
+                        <div className="truncate">
+                          <p className="text-xs font-semibold text-white truncate">{ep.title}</p>
+                          <p className="text-[10px] text-neutral-400 font-light">{ep.duration}</p>
                         </div>
-                      </button>
-                    ))}
-                  </div>
+                      </div>
+
+                      <Play className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white shrink-0 transition-colors" />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
         </motion.div>
       </motion.div>
+
+      {/* Artwork Lightbox Modal for 9:16 and 16:9 full resolution viewer & downloader */}
+      <ArtworkLightboxModal
+        isOpen={isLightboxOpen}
+        onClose={() => setIsLightboxOpen(false)}
+        artworks={lightboxMode === 'poster' ? posterImages : fanartImages}
+        initialIndex={lightboxMode === 'poster' ? selectedPosterIndex : selectedFanartIndex}
+        aspectRatio={lightboxMode === 'poster' ? '9/16' : '16/9'}
+        type={lightboxMode}
+        movieTitle={movie.title}
+      />
     </div>
   );
 };
@@ -804,13 +1023,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
 export const MovieDetailsModal: React.FC<MovieDetailsModalProps> = (props) => {
   return (
     <AnimatePresence>
-      {props.movie && (
-        <MovieDetailsContent
-          key={props.movie.id}
-          {...props}
-          movie={props.movie}
-        />
-      )}
+      {props.movie && <MovieDetailsContent key={props.movie.id} {...props} movie={props.movie} />}
     </AnimatePresence>
   );
 };

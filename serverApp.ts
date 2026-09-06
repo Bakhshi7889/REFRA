@@ -1011,6 +1011,115 @@ app.use((req, res, next) => {
     }
   });
 
+  // Streaming & Media Proxy Endpoint (Bypasses hotlinking restrictions from hosts like Pixeldrain)
+  app.get('/api/stream/proxy', async (req, res) => {
+    const rawUrl = req.query.url as string;
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const customFilename = (req.query.filename as string) || 'RefraCinema_Stream.mp4';
+
+    if (!rawUrl) {
+      return res.status(400).json({ error: 'Missing required "url" query parameter' });
+    }
+
+    try {
+      let targetUrl = decodeURIComponent(rawUrl);
+
+      // Normalize Pixeldrain URLs (/u/xxx -> /api/file/xxx)
+      if (targetUrl.includes('pixeldrain.com')) {
+        const uMatch = targetUrl.match(/pixeldrain\.com\/u\/([a-zA-Z0-9_-]+)/);
+        if (uMatch) {
+          targetUrl = `https://pixeldrain.com/api/file/${uMatch[1]}`;
+        }
+      }
+
+      const parsedUrl = new URL(targetUrl);
+      const headers: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': `${parsedUrl.origin}/`,
+        'Accept': '*/*',
+      };
+
+      // Forward client Range header for video scrubbing and chunk streaming
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range as string;
+      }
+
+      const upstreamRes = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+        redirect: 'follow',
+      });
+
+      res.status(upstreamRes.status);
+
+      // CORS & Streaming Headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+      const passThroughHeaders = [
+        'content-type',
+        'content-length',
+        'content-range',
+        'accept-ranges',
+        'last-modified',
+        'etag',
+      ];
+
+      passThroughHeaders.forEach((h) => {
+        const val = upstreamRes.headers.get(h);
+        if (val) res.setHeader(h, val);
+      });
+
+      if (!res.getHeader('accept-ranges')) {
+        res.setHeader('accept-ranges', 'bytes');
+      }
+
+      if (isDownload) {
+        // Direct download mode: force download attachment header with clean filename
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(customFilename)}"`);
+      } else {
+        // Streaming video player mode: MUST BE INLINE so the browser NEVER accidentally downloads when playing!
+        res.setHeader('Content-Disposition', 'inline');
+        const currentCt = (res.getHeader('content-type') as string) || '';
+        if (!currentCt || currentCt.includes('octet-stream')) {
+          res.setHeader('Content-Type', 'video/mp4');
+        }
+      }
+
+      if (!upstreamRes.body) {
+        return res.end();
+      }
+
+      const reader = upstreamRes.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (res.writableEnded || res.destroyed) {
+              await reader.cancel();
+              break;
+            }
+            res.write(value);
+          }
+          res.end();
+        } catch {
+          res.end();
+        }
+      };
+
+      pump().catch(() => res.end());
+    } catch (err: any) {
+      console.error('Stream proxy error:', err);
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Failed to proxy media stream', details: err.message });
+      } else {
+        res.end();
+      }
+    }
+  });
+
   // Stremio Addons & Streaming Servers Endpoint
   // Supported Addons:
   // 1. PenguPlay (Main & Default): https://pengu.uk/{"auth_token":"Lq-ENcXb6apaqdwbW8iDjK5gDKCpZ6_2qXP272M7UhY"}/manifest.json
@@ -1022,15 +1131,60 @@ app.use((req, res, next) => {
   const aggregatedStreamsCache = new Map<string, { data: any; timestamp: number }>();
   const STREAMS_CACHE_TTL = 15 * 60 * 1000;
 
+  function isTitleMatchingMovie(streamTitleOrDesc: string, targetTitle: string): boolean {
+    if (!streamTitleOrDesc || !targetTitle) return true;
+
+    const cleanTarget = targetTitle.toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+    const targetWords = cleanTarget
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !['the', 'and', 'for', 'part', 'vol', 'movie', 'film', 'series'].includes(w));
+
+    if (targetWords.length === 0) return true;
+
+    // 1. Check for 🍿 or 📡 movie title emoji in stream (e.g. "🍿 Inception (2010)" vs target "Obsession")
+    const movieTitleMatch = streamTitleOrDesc.match(/(?:🍿|📡)\s*([^\n\r•]+)/);
+    if (movieTitleMatch) {
+      const rawParsed = movieTitleMatch[1]
+        .replace(/\([0-9]{4}\)/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, ' ')
+        .trim();
+      const parsedWords = rawParsed
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !['the', 'and', 'for', 'part', 'vol', 'movie', 'film', 'series'].includes(w));
+
+      if (parsedWords.length > 0) {
+        const hasOverlap = targetWords.some((tw) =>
+          parsedWords.some((pw) => pw === tw || pw.startsWith(tw) || tw.startsWith(pw))
+        );
+        if (!hasOverlap) {
+          return false; // Mismatched movie title in 🍿 descriptor!
+        }
+      }
+    }
+
+    return true;
+  }
+
   app.get('/api/streams', async (req, res) => {
     try {
       let imdbId = (req.query.imdbId as string) || '';
-      const tmdbId = (req.query.tmdbId as string) || '';
+      let tmdbId = (req.query.tmdbId as string) || '';
+      const rawId = (req.query.id as string) || '';
       const type = (req.query.type as string) || 'movie';
       const season = parseInt((req.query.season as string) || '1', 10);
       const episode = parseInt((req.query.episode as string) || '1', 10);
       const title = (req.query.title as string) || 'Feature';
       const year = (req.query.year as string) || '2024';
+
+      if (!imdbId && rawId.startsWith('tt')) {
+        imdbId = rawId;
+      }
+      if (!tmdbId && rawId.startsWith('tmdb_')) {
+        tmdbId = rawId.replace(/^tmdb_/, '');
+      } else if (!tmdbId && /^[0-9]+$/.test(rawId)) {
+        tmdbId = rawId;
+      }
 
       const cacheLookupKey = `${imdbId || tmdbId || title}:${type}:${season}:${episode}`;
       const cached = aggregatedStreamsCache.get(cacheLookupKey);
@@ -1038,8 +1192,26 @@ app.use((req, res, next) => {
         return res.json(cached.data);
       }
 
+      // If tmdbId is missing or non-numeric, resolve from title
+      if ((!tmdbId || !/^[0-9]+$/.test(tmdbId)) && title && TMDB_KEY) {
+        try {
+          const searchType = type === 'series' || type === 'tv' ? 'tv' : 'movie';
+          const sRes = await fetch(
+            `https://api.themoviedb.org/3/search/${searchType}?api_key=${TMDB_KEY}&query=${encodeURIComponent(title)}${year ? `&year=${year}` : ''}`
+          );
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            if (sData.results && sData.results.length > 0) {
+              tmdbId = String(sData.results[0].id);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       // Resolve IMDB ID if missing
-      if (!imdbId && tmdbId) {
+      if (!imdbId && tmdbId && TMDB_KEY) {
         try {
           const extRes = await fetch(
             `https://api.themoviedb.org/3/${type === 'series' || type === 'tv' ? 'tv' : 'movie'}/${tmdbId}/external_ids?api_key=${TMDB_KEY}`
@@ -1057,115 +1229,120 @@ app.use((req, res, next) => {
       if (!imdbId && title) {
         try {
           const omdb = await getOmdbData(undefined, title);
-          if (omdb?.imdbID) imdbId = omdb.imdbID;
+          if (omdb?.imdbID && isTitleMatchingMovie(omdb.Title, title)) {
+            imdbId = omdb.imdbID;
+          }
         } catch {
           // ignore
         }
       }
 
-      // Fallback default ID if not resolvable (e.g. Inception or Tangerines)
-      if (!imdbId) {
-        imdbId = 'tt1375666';
-      }
-
-      const streamTargetId = type === 'series' || type === 'tv' ? `${imdbId}:${season}:${episode}` : imdbId;
+      // NOTE: NEVER default to 'tt1375666' (Inception) or 'tt0137523' (Fight Club)!
+      // Doing so causes external scrapers to return streams for the wrong film.
+      const cleanTmdbId = tmdbId ? tmdbId.replace(/^tmdb_/, '') : '';
+      const cleanImdbId = imdbId || '';
+      const streamTargetId = imdbId
+        ? (type === 'series' || type === 'tv' ? `${imdbId}:${season}:${episode}` : imdbId)
+        : (cleanTmdbId ? (type === 'series' || type === 'tv' ? `tmdb:${cleanTmdbId}:${season}:${episode}` : `tmdb:${cleanTmdbId}`) : '');
       const mediaType = type === 'series' || type === 'tv' ? 'series' : 'movie';
 
       // 1. Fetch live streams from user-provided Stremio addons
       // Addons: TorrentsDB, Torrentio, Comet, Kort, ThePirateBay+, Netflix Catalog
-      const cleanTmdbId = tmdbId ? tmdbId.replace(/^tmdb_/, '') : '550';
-      const cleanImdbId = imdbId || 'tt0137523';
       const isSeries = mediaType === 'series';
 
       // Real multi-provider streaming mirrors for instant playback
+      const targetMirrorId = cleanTmdbId || cleanImdbId;
       const vidlinkUrl = isSeries
-        ? `https://vidlink.pro/tv/${cleanTmdbId}/${season}/${episode}`
-        : `https://vidlink.pro/movie/${cleanTmdbId}`;
+        ? `https://vidlink.pro/tv/${targetMirrorId}/${season}/${episode}`
+        : `https://vidlink.pro/movie/${targetMirrorId}`;
 
       const videasyUrl = isSeries
-        ? `https://player.videasy.net/tv/${cleanTmdbId}/${season}/${episode}`
-        : `https://player.videasy.net/movie/${cleanTmdbId}`;
+        ? `https://player.videasy.net/tv/${targetMirrorId}/${season}/${episode}`
+        : `https://player.videasy.net/movie/${targetMirrorId}`;
 
       const autoembedUrl = isSeries
-        ? `https://autoembed.co/tv/tmdb/${cleanTmdbId}/${season}/${episode}`
-        : `https://autoembed.co/movie/tmdb/${cleanTmdbId}`;
+        ? `https://autoembed.co/tv/tmdb/${targetMirrorId}/${season}/${episode}`
+        : `https://autoembed.co/movie/tmdb/${targetMirrorId}`;
 
       const twoEmbedUrl = isSeries
-        ? `https://www.2embed.cc/embedtv/${cleanImdbId || cleanTmdbId}&s=${season}&e=${episode}`
-        : `https://www.2embed.cc/embed/${cleanImdbId || cleanTmdbId}`;
+        ? `https://www.2embed.cc/embedtv/${targetMirrorId}&s=${season}&e=${episode}`
+        : `https://www.2embed.cc/embed/${targetMirrorId}`;
 
       const smashyStreamUrl = isSeries
-        ? `https://embed.smashystream.com/playere.php?tmdb=${cleanTmdbId}&season=${season}&episode=${episode}`
-        : `https://embed.smashystream.com/playere.php?tmdb=${cleanTmdbId}`;
+        ? `https://embed.smashystream.com/playere.php?tmdb=${targetMirrorId}&season=${season}&episode=${episode}`
+        : `https://embed.smashystream.com/playere.php?tmdb=${targetMirrorId}`;
 
-// In-memory cache for live PenguPlay stream scraping (15 min TTL)
-const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>();
+      // In-memory cache for live PenguPlay stream scraping (15 min TTL)
+      const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>();
 
       // 1. Live PenguPlay Streams (User Favorite Addon)
-      // Note: PenguPlay requires an authentication token in the path, e.g. /{"auth_token":"..."}/stream/...
-      // Using the base https://pengu.uk/manifest.json alone returns the auth gate redirect (/signin.mp4).
+      // Note: Only query if we have a valid, verified target ID for this film (never a hardcoded default)
       let rawPenguStreams: any[] = [];
-      const penguCacheKey = `${mediaType}:${streamTargetId}`;
-      const cachedPengu = penguStreamCache.get(penguCacheKey);
-      if (cachedPengu && Date.now() < cachedPengu.expiresAt) {
-        rawPenguStreams = cachedPengu.streams;
-      } else {
+      if (streamTargetId) {
+        const penguCacheKey = `${mediaType}:${streamTargetId}`;
+        const cachedPengu = penguStreamCache.get(penguCacheKey);
+        if (cachedPengu && Date.now() < cachedPengu.expiresAt) {
+          rawPenguStreams = cachedPengu.streams;
+        } else {
+          try {
+            const penguToken = process.env.PENGUPLAY_TOKEN || 'Lq-ENcXb6apaqdwbW8iDjK5gDKCpZ6_2qXP272M7UhY';
+            const penguConfigPath = encodeURIComponent(JSON.stringify({ auth_token: penguToken }));
+            const pController = new AbortController();
+            const pTimeout = setTimeout(() => pController.abort(), 12000);
+            const pRes = await fetch(`https://pengu.uk/${penguConfigPath}/stream/${mediaType}/${streamTargetId}.json`, {
+              signal: pController.signal,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                Accept: 'application/json',
+              },
+            });
+            clearTimeout(pTimeout);
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              if (Array.isArray(pData.streams)) {
+                // Exclude the 'You must sign in' notice stream
+                rawPenguStreams = pData.streams.filter(
+                  (s: any) => s.title !== 'You must sign in' && !s.url?.includes('signin.mp4')
+                );
+                if (rawPenguStreams.length > 0) {
+                  penguStreamCache.set(penguCacheKey, {
+                    streams: rawPenguStreams,
+                    expiresAt: Date.now() + 15 * 60 * 1000,
+                  });
+                }
+              }
+            }
+          } catch (err: any) {
+            if (err.name !== 'AbortError') {
+              console.warn('PenguPlay live scrape note:', err.message);
+            }
+          }
+        }
+      }
+
+      // 2. Live TorrentsDB Streams (Only query if we have a valid target ID)
+      let rawTorrentsDbStreams: any[] = [];
+      if (streamTargetId) {
         try {
-          const penguToken = process.env.PENGUPLAY_TOKEN || 'Lq-ENcXb6apaqdwbW8iDjK5gDKCpZ6_2qXP272M7UhY';
-          const penguConfigPath = encodeURIComponent(JSON.stringify({ auth_token: penguToken }));
-          const pController = new AbortController();
-          const pTimeout = setTimeout(() => pController.abort(), 12000);
-          const pRes = await fetch(`https://pengu.uk/${penguConfigPath}/stream/${mediaType}/${streamTargetId}.json`, {
-            signal: pController.signal,
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 4500);
+          const tdbRes = await fetch(`https://torrentsdb.com/stream/${mediaType}/${streamTargetId}.json`, {
+            signal: controller.signal,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               Accept: 'application/json',
             },
           });
-          clearTimeout(pTimeout);
-          if (pRes.ok) {
-            const pData = await pRes.json();
-            if (Array.isArray(pData.streams)) {
-              // Exclude the 'You must sign in' notice stream
-              rawPenguStreams = pData.streams.filter(
-                (s: any) => s.title !== 'You must sign in' && !s.url?.includes('signin.mp4')
-              );
-              if (rawPenguStreams.length > 0) {
-                penguStreamCache.set(penguCacheKey, {
-                  streams: rawPenguStreams,
-                  expiresAt: Date.now() + 15 * 60 * 1000,
-                });
-              }
+          clearTimeout(timeout);
+          if (tdbRes.ok) {
+            const tdbData = await tdbRes.json();
+            if (Array.isArray(tdbData.streams)) {
+              rawTorrentsDbStreams = tdbData.streams;
             }
           }
         } catch (err: any) {
-          if (err.name !== 'AbortError') {
-            console.warn('PenguPlay live scrape note:', err.message);
-          }
+          console.warn('TorrentsDB scrape note:', err.message);
         }
-      }
-
-      // 2. Live TorrentsDB Streams
-      let rawTorrentsDbStreams: any[] = [];
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4500);
-        const tdbRes = await fetch(`https://torrentsdb.com/stream/${mediaType}/${streamTargetId}.json`, {
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            Accept: 'application/json',
-          },
-        });
-        clearTimeout(timeout);
-        if (tdbRes.ok) {
-          const tdbData = await tdbRes.json();
-          if (Array.isArray(tdbData.streams)) {
-            rawTorrentsDbStreams = tdbData.streams;
-          }
-        }
-      } catch (err: any) {
-        console.warn('TorrentsDB scrape note:', err.message);
       }
 
       // Addon logos (including authentic assets for PenguPlay, TorrentClaw, ThePirateBay+, Comet, Torrentio, TorrentsDB)
@@ -1202,6 +1379,8 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
           quality = '720p';
         } else if (/480p/i.test(fullText)) {
           quality = '480p';
+        } else if (/320p|360p|240p/i.test(fullText)) {
+          quality = '320p';
         }
 
         // Source Host / Provider
@@ -1281,7 +1460,7 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
         if (/HDR10\+/i.test(fullText)) badges.push('HDR10+');
         else if (hdr && hdr !== 'SDR') badges.push(hdr);
 
-        if (/10bit/i.test(fullText)) badges.push('10bit');
+        if (/10bit|10-bit|10\s*bit|hi10|main10/i.test(fullText)) badges.push('10bit');
         if (/Atmos/i.test(fullText)) badges.push('Atmos');
         if (/Digital\+|DDP/i.test(fullText)) badges.push('Digital+');
         if (/5\.1/i.test(fullText)) badges.push('5.1');
@@ -1328,6 +1507,11 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
           }
         }
 
+        // Check if stream belongs to a completely different movie
+        if (!isTitleMatchingMovie(fullText, title)) {
+          return null;
+        }
+
         // Movie / series name extraction from raw description
         // E.g. "🍿 The Matrix (1999)" or "📡 Breaking Bad • S02E07"
         let parsedMovieName = '';
@@ -1339,12 +1523,30 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
           parsedMovieName = seriesTitleMatch[1].trim();
         }
 
+        if (parsedMovieName && !isTitleMatchingMovie(parsedMovieName, title)) {
+          return null;
+        }
+
         const epSuffix = isSeries ? ` • S${season < 10 ? '0' + season : season}E${episode < 10 ? '0' + episode : episode}` : '';
-        const streamMovieTitle = parsedMovieName || `${title} (${year})${epSuffix}`;
+        const streamMovieTitle = `${title} (${year})${epSuffix}`;
 
         // Select working player mirror or direct video url
         const playUrl = idx % 2 === 0 ? vidlinkUrl : videasyUrl;
-        const streamUrl = item.url || playUrl;
+        let streamUrl = playUrl; // Default to playUrl so video player in app streams smoothly without triggering browser file download
+        let directProxyUrl: string | undefined = undefined;
+        let directDownloadUrl: string | undefined = undefined;
+
+        const downloadFileName = `${title.replace(/[^a-zA-Z0-9_\s-]/g, '').trim()} (${year}) [${quality}].mp4`;
+
+        if (item.url) {
+          directProxyUrl = `/api/stream/proxy?url=${encodeURIComponent(item.url)}&filename=${encodeURIComponent(downloadFileName)}`;
+          directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(item.url)}&download=1&filename=${encodeURIComponent(downloadFileName)}`;
+        } else {
+          directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(playUrl)}&download=1&filename=${encodeURIComponent(downloadFileName)}`;
+        }
+
+        const sizeInGb = (fileSizeBytes || sizeNum * 1024 * 1024 * 1024) / (1024 * 1024 * 1024);
+        const isUnder5Gb = sizeInGb > 0 && sizeInGb < 5;
 
         const uniqueId = `stream_${serverName.toLowerCase().replace(/[^a-z0-9]/g, '')}_${quality.toLowerCase()}_${idx}_${cleanSizeNumber.replace(/\./g, '_')}`;
 
@@ -1369,6 +1571,10 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
           subtitles: item.subtitles || [],
           subtitlesText,
           url: streamUrl,
+          rawDirectUrl: item.url || null,
+          directProxyUrl: directProxyUrl || null,
+          directDownloadUrl: directDownloadUrl || null,
+          isUnder5Gb,
           embedUrl: playUrl,
           rawDescription: rawDesc,
           badges,
@@ -1382,14 +1588,16 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
       // 1. Process live PenguPlay streams (Preferred & User-Favorite Addon)
       if (rawPenguStreams.length > 0) {
         rawPenguStreams.forEach((item, idx) => {
-          streams.push(parseStreamDetails(item, idx, 'PenguPlay'));
+          const parsed = parseStreamDetails(item, idx, 'PenguPlay');
+          if (parsed) streams.push(parsed);
         });
       }
 
       // 2. Process live TorrentsDB streams
       if (rawTorrentsDbStreams.length > 0) {
         rawTorrentsDbStreams.forEach((item, idx) => {
-          streams.push(parseStreamDetails(item, idx, 'TorrentsDB'));
+          const parsed = parseStreamDetails(item, idx, 'TorrentsDB');
+          if (parsed) streams.push(parsed);
         });
       }
 
@@ -1628,8 +1836,8 @@ const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>(
       ];
 
       addonStreamsRegistry.forEach((spec, sIdx) => {
-        // Skip synthetic PenguPlay streams if live ones were already loaded from the PenguPlay API
-        if (spec.server === 'PenguPlay' && rawPenguStreams.length > 0) {
+        // Skip synthetic PenguPlay streams only if verified live PenguPlay streams were loaded for THIS movie
+        if (spec.server === 'PenguPlay' && streams.some((s) => s.serverName === 'PenguPlay')) {
           return;
         }
 
