@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, toWebpUrl } from '../utils/imageHelpers';
 import { fetchWatchProviders, discoverMoviesWithFilters, WatchProvider } from '../services/movieApi';
+import { getUserRegion } from '../services/regionStore';
 
 const GENRES = [
   { id: 28, name: 'Action' },
@@ -58,7 +59,12 @@ const BEFORE_PRESETS = [
 const LANGUAGES = [
   { code: 'all', name: 'All Languages' },
   { code: 'en', name: 'English' },
-  { code: 'hi', name: 'Hindi' },
+  { code: 'hi', name: 'Hindi (Bollywood)' },
+  { code: 'ta', name: 'Tamil (Kollywood)' },
+  { code: 'te', name: 'Telugu (Tollywood)' },
+  { code: 'ml', name: 'Malayalam (Mollywood)' },
+  { code: 'kn', name: 'Kannada (Sandalwood)' },
+  { code: 'bn', name: 'Bengali' },
   { code: 'ja', name: 'Japanese' },
   { code: 'ko', name: 'Korean' },
   { code: 'es', name: 'Spanish' },
@@ -135,37 +141,80 @@ export function SearchView({
     setSelectedSort('popularity.desc');
   };
 
-  // Load streaming providers on mount
+  // Load streaming providers on mount and region updates
   useEffect(() => {
-    Promise.all([fetchWatchProviders('IN'), fetchWatchProviders('US')]).then(
-      ([inData, usData]) => {
-        const combined = [...inData, ...usData];
-        const unique = Array.from(
-          new Map(combined.map((p) => [p.provider_id, p])).values()
-        );
-        const allowed = [
-          8, // Netflix
-          119, 9, // Prime
-          337, // Disney+
-          350, // Apple TV
-          2336, 122, // Hotstar/JioHotstar
-          237, // SonyLiv
-          232, // Zee5
-          220, // JioCinema
-          15, // Hulu
-          384, 1825, // HBO Max
-          386, // Peacock
-          2303, // Paramount
-          283, // Crunchyroll
-          11, // MUBI
-          192, // YouTube
-        ];
-        const topProviders = unique
-          .filter((p) => allowed.includes(p.provider_id))
-          .slice(0, 15);
-        setProviders(topProviders);
-      }
-    );
+    let isCurrent = true;
+
+    const loadProviders = () => {
+      const userReg = getUserRegion() || 'US';
+      Promise.all([fetchWatchProviders(userReg), fetchWatchProviders('US')]).then(
+        ([regData, usData]) => {
+          if (!isCurrent) return;
+          const combined = [...regData, ...usData];
+          const unique = Array.from(
+            new Map(combined.map((p) => [p.provider_id, p])).values()
+          );
+          const allowedOrder =
+            userReg === 'IN'
+              ? [
+                  122, 2336, // JioHotstar / Hotstar
+                  119, 9, // Prime Video
+                  8, // Netflix
+                  220, // JioCinema
+                  237, // SonyLiv
+                  232, // Zee5
+                  337, // Disney+
+                  350, // Apple TV
+                  283, // Crunchyroll
+                  192, // YouTube
+                  11, // MUBI
+                ]
+              : [
+                  8, // Netflix
+                  119, 9, // Prime
+                  337, // Disney+
+                  350, // Apple TV
+                  2336, 122, // Hotstar/JioHotstar
+                  237, // SonyLiv
+                  232, // Zee5
+                  220, // JioCinema
+                  15, // Hulu
+                  384, 1825, // HBO Max
+                  386, // Peacock
+                  2303, // Paramount
+                  283, // Crunchyroll
+                  11, // MUBI
+                  192, // YouTube
+                ];
+
+          const providerMap = new Map(unique.map((p) => [p.provider_id, p]));
+          const topProviders: WatchProvider[] = [];
+          for (const id of allowedOrder) {
+            const found = providerMap.get(id);
+            if (found && !topProviders.some((p) => p.provider_id === found.provider_id)) {
+              topProviders.push(found);
+            }
+          }
+          for (const p of unique) {
+            if (!topProviders.some((tp) => tp.provider_id === p.provider_id)) {
+              topProviders.push(p);
+            }
+          }
+          setProviders(topProviders.slice(0, 16));
+        }
+      );
+    };
+
+    loadProviders();
+    const handleRegionChange = () => {
+      loadProviders();
+    };
+
+    window.addEventListener('refra_region_changed', handleRegionChange);
+    return () => {
+      isCurrent = false;
+      window.removeEventListener('refra_region_changed', handleRegionChange);
+    };
   }, []);
 
   // Fetch results when query, provider, type, or filters change
@@ -909,7 +958,7 @@ export function SearchView({
                       {/* Media type badge */}
                       {movie.mediaType && (
                         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-md border border-white/10 text-[9px] font-semibold uppercase tracking-wider text-neutral-300">
-                          {movie.mediaType === 'tv' ? 'Series' : 'Film'}
+                          {movie.mediaType === 'tv' ? 'Series' : movie.mediaType === 'anime' ? 'Anime' : 'Movie'}
                         </div>
                       )}
 

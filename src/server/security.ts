@@ -37,6 +37,8 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "connect-src 'self' ws: wss: https://api.themoviedb.org https://graphql.anilist.co https://www.google-analytics.com https://region1.google-analytics.com https://*.run.app",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

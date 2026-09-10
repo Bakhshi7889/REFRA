@@ -8,6 +8,7 @@ import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { StreamServerSelectorModal } from './components/StreamServerSelectorModal';
 import { CastModal, CastDevice } from './components/CastModal';
 import { NotificationsModal } from './components/NotificationsModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { BottomNav } from './components/BottomNav';
 import { WatchlistView } from './components/WatchlistView';
 import { ExploreView } from './components/ExploreView';
@@ -22,8 +23,14 @@ import {
   fetchSciFiMovies,
   fetchActionMovies,
   fetchThrillersMovies,
+  fetchIndiaTrending,
+  fetchBollywoodMovies,
+  fetchSouthIndianMovies,
+  fetchIndianSeries,
   searchMovies,
+  clearMovieApiCache,
 } from './services/movieApi';
+import { getUserRegionInfo, getUserRegion } from './services/regionStore';
 import { Movie, CategoryFilter, NavTab, ExpansionOrigin, StreamItem } from './types';
 import { Search, Star, Loader2, Plus, Check } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -96,6 +103,12 @@ export default function App() {
         (m) => m.genres.includes('Thriller') || m.genres.includes('Drama')
       )
   );
+
+  const [userRegion, setUserRegionState] = useState<string>(() => getUserRegion() || 'US');
+  const [indiaTrending, setIndiaTrending] = useState<Movie[]>([]);
+  const [bollywoodMovies, setBollywoodMovies] = useState<Movie[]>([]);
+  const [southMovies, setSouthMovies] = useState<Movie[]>([]);
+  const [indiaSeries, setIndiaSeries] = useState<Movie[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
@@ -284,9 +297,68 @@ export default function App() {
       }
     }
 
+    const loadIndiaData = async () => {
+      try {
+        const [inTrend, inBolly, inSouth, inTv] = await Promise.all([
+          fetchIndiaTrending(),
+          fetchBollywoodMovies(),
+          fetchSouthIndianMovies(),
+          fetchIndianSeries(),
+        ]);
+        if (isMounted) {
+          if (inTrend?.length > 0) setIndiaTrending(inTrend);
+          if (inBolly?.length > 0) setBollywoodMovies(inBolly);
+          if (inSouth?.length > 0) setSouthMovies(inSouth);
+          if (inTv?.length > 0) setIndiaSeries(inTv);
+        }
+      } catch (err) {
+        console.warn('India feed fetch notice:', err);
+      }
+    };
+
+    // Initialize auto-detected region and save if not already set
+    const currentRegionInfo = getUserRegionInfo();
+    const activeReg = currentRegionInfo?.code || getUserRegion() || 'US';
+    setUserRegionState(activeReg);
+
     loadData();
+    if (activeReg === 'IN') {
+      loadIndiaData();
+    }
+
+    const handleRegionChanged = async () => {
+      clearMovieApiCache();
+      const updatedReg = getUserRegion() || 'US';
+      setUserRegionState(updatedReg);
+      try {
+        const [spotlights, trending, topRated] = await Promise.all([
+          fetchSpotlightMovies(),
+          fetchTrendingMovies(),
+          fetchTopRatedMovies(),
+        ]);
+        if (isMounted) {
+          if (spotlights.length > 0) setSpotlightMovies(spotlights);
+          if (trending.length > 0) setTrendingMovies(trending);
+          if (topRated.length > 0) setTopRatedMovies(topRated);
+        }
+        if (updatedReg === 'IN') {
+          loadIndiaData();
+        } else {
+          setIndiaTrending([]);
+          setBollywoodMovies([]);
+          setSouthMovies([]);
+          setIndiaSeries([]);
+        }
+      } catch (err) {
+        console.warn('Region feed reload error:', err);
+      }
+    };
+
+    window.addEventListener('refra_region_changed', handleRegionChanged);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('refra_region_changed', handleRegionChanged);
     };
   }, []);
 
@@ -305,6 +377,10 @@ export default function App() {
       ...scifiMovies,
       ...actionMovies,
       ...thrillerMovies,
+      ...indiaTrending,
+      ...bollywoodMovies,
+      ...southMovies,
+      ...indiaSeries,
       ...FALLBACK_MOVIES,
     ];
 
@@ -323,6 +399,10 @@ export default function App() {
     scifiMovies,
     actionMovies,
     thrillerMovies,
+    indiaTrending,
+    bollywoodMovies,
+    southMovies,
+    indiaSeries,
   ]);
 
   // Handle live search
@@ -365,6 +445,10 @@ export default function App() {
       ...scifiMovies,
       ...actionMovies,
       ...thrillerMovies,
+      ...indiaTrending,
+      ...bollywoodMovies,
+      ...southMovies,
+      ...indiaSeries,
       ...FALLBACK_MOVIES,
     ].forEach((m) => {
       if (!map.has(m.id)) map.set(m.id, m);
@@ -378,6 +462,10 @@ export default function App() {
     scifiMovies,
     actionMovies,
     thrillerMovies,
+    indiaTrending,
+    bollywoodMovies,
+    southMovies,
+    indiaSeries,
   ]);
 
   // Unified Continue Watching queue dynamically synced with persistent IndexedDB history
@@ -642,7 +730,7 @@ export default function App() {
           backgroundColor: isCustomImageActive ? 'transparent' : activeBgColor,
         }}
       >
-        {/* Floating Combined Action Pill (Notification + Cast) */}
+        {/* Floating Combined Action Pill (Notification + Cast + Install) */}
         {(activeTab === 'home' || activeTab === 'explore') && (
           <Navbar
             onOpenCast={() => {
@@ -686,7 +774,7 @@ export default function App() {
 
             {/* 1st Divider: Trending Masterworks */}
             <MovieRow
-              title="Trending Masterworks"
+              title={userRegion === 'IN' ? "Trending Globally" : "Trending Masterworks"}
               movies={trendingMovies}
               onMovieClick={handleOpenDetails}
               watchlist={watchlist}
@@ -694,6 +782,56 @@ export default function App() {
               onPlayMovie={handlePlayMovie}
               showDivider={true}
             />
+
+            {/* India-Specific Feed: Popular, Bollywood, South Indian, and Originals */}
+            {userRegion === 'IN' && (
+              <>
+                {indiaTrending.length > 0 && (
+                  <MovieRow
+                    title="Trending in India"
+                    movies={indiaTrending}
+                    onMovieClick={handleOpenDetails}
+                    watchlist={watchlist}
+                    onToggleWatchlist={toggleWatchlist}
+                    onPlayMovie={handlePlayMovie}
+                    showDivider={true}
+                  />
+                )}
+                {bollywoodMovies.length > 0 && (
+                  <MovieRow
+                    title="Bollywood & Hindi Blockbusters"
+                    movies={bollywoodMovies}
+                    onMovieClick={handleOpenDetails}
+                    watchlist={watchlist}
+                    onToggleWatchlist={toggleWatchlist}
+                    onPlayMovie={handlePlayMovie}
+                    showDivider={true}
+                  />
+                )}
+                {southMovies.length > 0 && (
+                  <MovieRow
+                    title="South Indian Cinema (Telugu, Tamil, Malayalam, Kannada)"
+                    movies={southMovies}
+                    onMovieClick={handleOpenDetails}
+                    watchlist={watchlist}
+                    onToggleWatchlist={toggleWatchlist}
+                    onPlayMovie={handlePlayMovie}
+                    showDivider={true}
+                  />
+                )}
+                {indiaSeries.length > 0 && (
+                  <MovieRow
+                    title="Indian Web Series & Drama"
+                    movies={indiaSeries}
+                    onMovieClick={handleOpenDetails}
+                    watchlist={watchlist}
+                    onToggleWatchlist={toggleWatchlist}
+                    onPlayMovie={handlePlayMovie}
+                    showDivider={true}
+                  />
+                )}
+              </>
+            )}
 
             {/* 2nd Divider: Trending Anime */}
             <MovieRow
@@ -872,6 +1010,9 @@ export default function App() {
             }
           }}
         />
+
+        {/* Global Offline Network Status Toast */}
+        <OfflineIndicator />
       </main>
     </div>
   );

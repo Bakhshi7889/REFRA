@@ -9,7 +9,6 @@ import {
   Sparkles,
   SunMedium,
   CheckCircle2,
-  RefreshCcw,
   Droplets,
   Sliders,
   RotateCcw,
@@ -177,8 +176,10 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
       glassBlur:
         mode === 'blur'
           ? (themeConfig.glassBlur && themeConfig.glassBlur >= 4 ? themeConfig.glassBlur : 14)
-          : (themeConfig.glassBlur !== undefined ? themeConfig.glassBlur : 1),
-      refractionHeight: themeConfig.refractionHeight ?? 18,
+          : (mode === 'crystal'
+              ? (themeConfig.glassBlur !== undefined && themeConfig.glassBlur <= 4 ? themeConfig.glassBlur : 1)
+              : 0),
+      refractionHeight: mode === 'crystal' ? (themeConfig.refractionHeight ?? 40) : 0,
     };
     onThemeChanged(updated);
     saveThemeConfig(updated);
@@ -207,19 +208,6 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
     saveThemeConfig(updated);
   };
 
-  const handleResetGlass = () => {
-    const updated: UiThemeConfig = {
-      ...themeConfig,
-      liquidGlassMode: 'crystal',
-      glassBlur: 1,
-      refractionHeight: 18,
-      edgeStretch: 'subtle',
-    };
-    onThemeChanged(updated);
-    saveThemeConfig(updated);
-    if (showToast) showToast('Reset Glass to Default');
-  };
-
   return (
     <div className="space-y-3">
       {/* Hidden File Input for Custom Background Image */}
@@ -231,12 +219,11 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
         className="hidden"
       />
 
-      {/* Apple-style Group Section Header */}
+      {/* Group Section Header */}
       <div className="flex items-center justify-between px-3">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-          Aesthetics & Visual Identity
+          Appearance
         </h4>
-        <span className="text-[10px] text-neutral-400 font-medium">Real-Time Reactive</span>
       </div>
 
       {/* Apple iOS-Style Segmented Picker */}
@@ -533,7 +520,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                 <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center">
                   <Upload className="w-4 h-4" />
                 </div>
-                <h6 className="text-xs font-semibold text-white">Custom Device Wallpaper</h6>
+                <h6 className="text-xs font-semibold text-white">Custom Wallpaper</h6>
               </div>
 
               <div className="flex items-center gap-2">
@@ -612,7 +599,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
         <div className="space-y-3 pt-1">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-white">
-              15 OLED Canvas Swatches
+              OLED Colors
             </span>
             <span className="text-[11px] font-mono text-neutral-400">
               {themeConfig.selectedBgColor}
@@ -660,7 +647,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
       {/* ================= TAB 2: TYPOGRAPHY (4 FONTS) ================= */}
       {activeSubTab === 'fonts' && (
         <div className="rounded-3xl glass-card-themed p-4 space-y-3.5">
-          <h5 className="text-xs font-semibold text-white">Typographic Scale</h5>
+          <h5 className="text-xs font-semibold text-white">Typography</h5>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {FONT_OPTIONS.map((font, idx) => {
@@ -710,20 +697,9 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
       {/* ================= TAB 3: GLASS SURFACE ENGINE ================= */}
       {activeSubTab === 'glass' && (
         <div className="rounded-3xl glass-card-themed p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Droplets className="w-4 h-4 text-white" />
-              <h5 className="text-xs font-semibold text-white">Glass Surface Architecture</h5>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleResetGlass}
-              className="px-3 py-1 rounded-full btn-theme-secondary text-[11px] flex items-center gap-1.5 cursor-pointer"
-            >
-              <RefreshCcw className="w-3 h-3" />
-              <span>Reset Glass</span>
-            </button>
+          <div className="flex items-center gap-2">
+            <Droplets className="w-4 h-4 text-white" />
+            <h5 className="text-xs font-semibold text-white">Glass Surface Architecture</h5>
           </div>
 
           {/* 3 Separate Full Size Pills Separated Vertically with Accordion Popdowns */}
@@ -744,9 +720,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   <span className="text-xs sm:text-sm font-semibold">Liquid Glass</span>
                 </div>
                 <span className="text-[11px] opacity-70 font-medium">
-                  {isLiquid
-                    ? `${themeConfig.glassBlur ?? 1}px blur · ${themeConfig.refractionHeight ?? 18}px refraction`
-                    : 'Refractive Caustics'}
+                  {isLiquid ? `${themeConfig.glassBlur ?? 1}px` : ''}
                 </span>
               </button>
 
@@ -785,15 +759,15 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-white">Refraction Height</span>
                         <span className="text-xs font-medium text-neutral-300">
-                          {themeConfig.refractionHeight ?? 18}px
+                          {themeConfig.refractionHeight ?? 40}px
                         </span>
                       </div>
                       <input
                         type="range"
                         min="0"
-                        max="40"
+                        max="50"
                         step="1"
-                        value={themeConfig.refractionHeight ?? 18}
+                        value={themeConfig.refractionHeight ?? 40}
                         onChange={(e) => handleRefractionHeightChange(Number(e.target.value))}
                         className="w-full accent-white h-1.5 bg-white/10 rounded-lg cursor-pointer"
                       />
@@ -819,7 +793,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   <span className="text-xs sm:text-sm font-semibold">Standard Blur</span>
                 </div>
                 <span className="text-[11px] opacity-70 font-medium">
-                  {isBlur ? `${themeConfig.glassBlur ?? 14}px blur` : 'Standard Frosted'}
+                  {isBlur ? `${themeConfig.glassBlur ?? 14}px` : ''}
                 </span>
               </button>
 
@@ -869,7 +843,6 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   <Square className="w-4 h-4 shrink-0" />
                   <span className="text-xs sm:text-sm font-semibold">Plain Opaque</span>
                 </div>
-                <span className="text-[11px] opacity-70 font-medium">Solid Matte</span>
               </button>
             </div>
           </div>

@@ -79,11 +79,19 @@ const DIRECTORS: DirectorItem[] = [
     badge: 'AFI Lifetime',
     query: 'Martin Scorsese',
   },
+  {
+    name: 'S.S. Rajamouli',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=240&q=80',
+    signatureFilm: 'RRR • Baahubali',
+    badge: 'Visionary Epics',
+    query: 'S.S. Rajamouli',
+  },
 ];
 
 const STUDIOS: StudioHub[] = [
   { name: 'Studio Ghibli', tagline: 'Enchanted anime masterpieces', badge: 'Japan', query: 'Ghibli' },
   { name: 'A24', tagline: 'Visionary indie cinema & arthouse', badge: 'Auteur', query: 'A24' },
+  { name: 'Indian Cinema Hub', tagline: 'Bollywood, Tollywood & Pan-India blockbusters', badge: 'India', query: 'Indian cinema' },
   { name: 'IMAX 70mm', tagline: 'Uncompressed cinematic scale', badge: '4K HDR', query: 'IMAX' },
   { name: 'Marvel Studios', tagline: 'Interconnected comic sagas', badge: 'MCU', query: 'Marvel' },
   { name: 'HBO / Warner Bros', tagline: 'Prestige cinema & blockbusters', badge: 'WB', query: 'Warner' },
@@ -95,6 +103,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onSelectCategory,
 }) => {
   const genres = [
+    { name: 'Indian Cinema', icon: Film, count: 'Bollywood & South', desc: 'Epic narratives, mass spectacle & musical dramas' },
     { name: 'Sci-Fi', icon: Sparkles, count: '14 films', desc: 'Cosmic scale & synthetic horizons' },
     { name: 'Anime', icon: Tv, count: '18 films', desc: 'Dual-Audio Japanese & English simulcasts' },
     { name: 'Neo-Noir', icon: Flame, count: '9 films', desc: 'Urban shadows & digital crime' },

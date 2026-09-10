@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cast, Bell } from 'lucide-react';
+import { Cast, Bell, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface NavbarProps {
   onOpenCast: () => void;
@@ -21,6 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   connectedDeviceName = null,
   unreadCount = 0,
 }) => {
+  const { isInstalled, isInstallable, install } = usePWAInstall();
   const [isBellActive, setIsBellActive] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -74,6 +76,23 @@ export const Navbar: React.FC<NavbarProps> = ({
       className="fixed top-0 left-0 right-0 z-40 pointer-events-none px-4 pt-3.5 flex justify-end max-w-md sm:max-w-xl md:max-w-2xl mx-auto safe-top"
     >
       <div className="pointer-events-auto liquid-glass liquid-glass-pill rounded-full px-2 py-1.5 flex items-center gap-1 max-w-fit relative overflow-hidden bg-[#101218]/65 border-white/12 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+        {/* Chrome Native PWA Install Button */}
+        {!isInstalled && isInstallable && (
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            type="button"
+            onClick={async () => {
+              await install();
+            }}
+            className="h-9 px-3 rounded-full flex items-center gap-1.5 transition-all duration-200 cursor-pointer bg-white/10 hover:bg-white/20 text-neutral-200 hover:text-white border border-white/10 text-xs font-semibold"
+            aria-label="Install Refra"
+            title="Install Refra"
+          >
+            <Download className="w-3.5 h-3.5 text-neutral-300" />
+            <span className="hidden sm:inline">Install</span>
+          </motion.button>
+        )}
+
         {/* Cast Button */}
         <motion.button
           whileTap={{ scale: 0.96 }}

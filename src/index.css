@@ -30,6 +30,7 @@
   --badge-bg: rgba(255, 255, 255, 0.14);
   --badge-text: #ffffff;
   --badge-border: rgba(255, 255, 255, 0.25);
+  --glass-blur-strength: 1px;
 }
 
 html {
@@ -141,8 +142,8 @@ button, [role="button"], a {
   .liquid-glass {
     -webkit-backdrop-filter: blur(16px) saturate(180%);
     backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 4px)) saturate(180%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 4px)) saturate(180%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(180%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(180%);
     background-color: var(--glass-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.36);
@@ -152,8 +153,8 @@ button, [role="button"], a {
   .liquid-glass-subtle {
     -webkit-backdrop-filter: blur(14px) saturate(160%);
     backdrop-filter: blur(14px) saturate(160%);
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-subtle)) blur(var(--glass-blur-strength, 3px)) saturate(160%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-subtle)) blur(var(--glass-blur-strength, 3px)) saturate(160%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(160%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(160%);
     background-color: var(--glass-subtle-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -163,8 +164,8 @@ button, [role="button"], a {
   .liquid-glass-pill {
     -webkit-backdrop-filter: blur(16px) saturate(215%);
     backdrop-filter: blur(16px) saturate(215%);
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(215%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(215%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(215%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(215%);
     background-color: var(--glass-pill-bg, rgba(16, 18, 24, 0.65));
     border: 1px solid var(--glass-border);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -173,8 +174,8 @@ button, [role="button"], a {
 
   /* Specific Liquid Glass Mode Overrides */
   [data-liquid-glass="crystal"] .liquid-glass {
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(185%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(185%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(185%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(185%);
     background-color: rgba(255, 255, 255, var(--glass-white-wash, 0.015));
     border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.16));
     /* Optical Dual-Rim Meniscus Specular Highlights (Top & Bottom Prism Catch) */
@@ -189,8 +190,8 @@ button, [role="button"], a {
   }
 
   [data-liquid-glass="crystal"] .liquid-glass-pill {
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(220%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(220%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(220%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(220%);
     background-color: rgba(16, 18, 24, 0.65);
     border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.16));
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
@@ -198,8 +199,8 @@ button, [role="button"], a {
 
   /* 3D Volumetric Physical Lens Depth (Convex Meniscus & Realistic Optical Depth) */
   [data-glass-depth="realistic3D"] [data-liquid-depth="true"] {
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(190%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(190%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(190%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(190%);
     background-color: rgba(255, 255, 255, var(--glass-white-wash, 0.015));
     border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.18));
     /* Multi-tier volumetric physical depth: top & bottom specular stretch reflections, volume & lateral arcs */
@@ -216,8 +217,8 @@ button, [role="button"], a {
   }
 
   [data-glass-depth="realistic3D"] .liquid-glass-pill {
-    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(225%);
-    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(225%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(225%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-dynamic)) blur(var(--glass-blur-strength, 1px)) saturate(225%);
     background-color: rgba(16, 18, 24, 0.65);
     border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.18));
     box-shadow:

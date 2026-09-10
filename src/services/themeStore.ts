@@ -346,14 +346,14 @@ export interface UiThemeConfig {
   // Optical Liquid Glass Refraction Engine
   liquidGlassMode: LiquidGlassMode; // 'crystal' | 'blur' | 'opaque' | 'frosted' | 'darkSmoke' | 'off'
   refractionIntensity: LiquidRefractionIntensity; // 'subtle' | 'medium' | 'bold'
-  refractionHeight?: number; // 0 to 40px (exact optical displacement scale, default 18px)
+  refractionHeight?: number; // 0 to 50px (exact optical displacement scale, default 40px)
   edgeStretch: EdgeStretchOption; // 'subtle' (natural optical bevel) | 'bold' (deep prism meniscus) | 'hyper' (hyper-meniscus warp) | 'off' (flat isotropic)
   glassDepthProfile: GlassDepthProfile; // 'realistic3D' (convex lens meniscus refraction & optical volume) | 'subtleBevel' | 'minimalist'
 
   // Glass Blur & Clarity (Anti-Milkiness / Real Crystal Glass)
-  glassBlur: number; // 0 to 32px (custom blur in glass, default 3px for crystal optical glass)
+  glassBlur: number; // 0 to 32px (custom blur in glass, default 1px for liquid optical glass)
   glassClarity: GlassClarityOption; // 'crystalClear' (1.5% white) | 'natural' (3.5%) | 'subtleWash' (7%) | 'milkyFrosted' (14%)
-  glassWhiteWash: number; // 0 to 25% white body opacity (default 1.5% to avoid whitish cloudy fog)
+  glassWhiteWash: number; // 0 to 25% white body opacity (default 0% to avoid whitish cloudy fog)
 
   // Network & Bandwidth Optimization
   dataSaverMode: boolean; // Low-bandwidth optimization: pauses idle cycling, disables trailer autoplay, uses compressed w185/w342 posters, disables aggressive preloading
@@ -375,7 +375,7 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   enableContainment: true,
   liquidGlassMode: 'crystal',
   refractionIntensity: 'subtle',
-  refractionHeight: 18,
+  refractionHeight: 40,
   edgeStretch: 'subtle',
   glassDepthProfile: 'realistic3D',
   glassBlur: 1,
@@ -523,7 +523,7 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
 
   // Glass Blur Value (Customizable Blur in Glass)
   // If user set an explicit glassBlur, prioritize it; otherwise use blurBudget baseline
-  let effectiveGlassBlur = 3;
+  let effectiveGlassBlur = 1;
   if (typeof config.glassBlur === 'number') {
     effectiveGlassBlur = Math.max(0, Math.min(40, config.glassBlur));
   } else if (blurBudget === 'optimized') {
@@ -531,7 +531,7 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   } else if (blurBudget === 'solid') {
     effectiveGlassBlur = 0;
   } else {
-    effectiveGlassBlur = 16;
+    effectiveGlassBlur = 1;
   }
 
   root.style.setProperty('--glass-blur-strength', `${effectiveGlassBlur}px`);
@@ -558,7 +558,7 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   const refractionIntensity: LiquidRefractionIntensity = config.refractionIntensity || 'medium';
   const edgeStretch: EdgeStretchOption = config.edgeStretch || 'subtle';
   const glassDepthProfile: GlassDepthProfile = config.glassDepthProfile || 'realistic3D';
-  const refractionHeight = config.refractionHeight ?? 18;
+  const refractionHeight = config.refractionHeight ?? 40;
 
   root.setAttribute('data-liquid-glass', liquidGlassMode);
   root.setAttribute('data-refraction-intensity', refractionIntensity);
@@ -582,19 +582,24 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   }
 }
 
-const THEME_VERSION_KEY = 'refra_theme_ver_v10_chrome_horizon';
+const THEME_VERSION_KEY = 'refra_theme_ver_v12_liquid_40px_1px_clean';
 
 export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
   try {
     const isUpgraded = localStorage.getItem(THEME_VERSION_KEY);
-    if (!isUpgraded) {
+    const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
+    const fromLocal = localStorage.getItem('refra_ui_theme_config');
+    const raw = fromIdb || (fromLocal ? JSON.parse(fromLocal) : null);
+
+    if (!isUpgraded || !raw) {
       localStorage.setItem(THEME_VERSION_KEY, 'true');
-      const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
-      const fromLocal = localStorage.getItem('refra_ui_theme_config');
-      const base = fromIdb || (fromLocal ? JSON.parse(fromLocal) : DEFAULT_THEME_CONFIG);
+      const base = raw || DEFAULT_THEME_CONFIG;
       const updated: UiThemeConfig = {
         ...DEFAULT_THEME_CONFIG,
         ...base,
+        refractionHeight: 40,
+        glassBlur: 1,
+        liquidGlassMode: 'crystal',
         bgMode: 'image',
         customBgImage: '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp',
         customBgImageName: 'Chrome Horizon',
@@ -603,11 +608,17 @@ export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
       return updated;
     }
 
-    const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
-    if (fromIdb) return { ...DEFAULT_THEME_CONFIG, ...fromIdb };
-
-    const fromLocal = localStorage.getItem('refra_ui_theme_config');
-    if (fromLocal) return { ...DEFAULT_THEME_CONFIG, ...JSON.parse(fromLocal) };
+    const merged: UiThemeConfig = { ...DEFAULT_THEME_CONFIG, ...raw };
+    // Enforce 1px blur and 40px refraction height for liquid crystal glass defaults
+    if (merged.liquidGlassMode === 'crystal' || !merged.liquidGlassMode) {
+      if (merged.glassBlur === 14 || merged.glassBlur === 3 || typeof merged.glassBlur !== 'number') {
+        merged.glassBlur = 1;
+      }
+      if (merged.refractionHeight === 18 || typeof merged.refractionHeight !== 'number') {
+        merged.refractionHeight = 40;
+      }
+    }
+    return merged;
   } catch (err) {
     console.warn('Load theme config notice:', err);
   }

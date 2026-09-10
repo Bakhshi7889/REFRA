@@ -6,6 +6,20 @@ import { app } from './serverApp';
 const PORT = 3000;
 
 async function startServer() {
+  // Service Worker and Web App Manifest handlers with compliant headers
+  app.get('/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(process.cwd(), 'public', 'sw.js'));
+  });
+
+  app.get(['/manifest.webmanifest', '/manifest.json'], (req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.sendFile(path.join(process.cwd(), 'public', 'manifest.webmanifest'));
+  });
+
   // Static files in public
   app.use(express.static(path.join(process.cwd(), 'public')));
 

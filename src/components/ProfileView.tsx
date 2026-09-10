@@ -23,6 +23,7 @@ import {
   WifiOff,
   Gauge,
   ShieldCheck,
+  ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -42,7 +43,9 @@ import {
 import { loginTraktUser, fetchTraktRemoteWatchlist } from '../services/traktApi';
 import { ThemeSettingsSection } from './ThemeSettingsSection';
 import { UiThemeConfig, DEFAULT_THEME_CONFIG, loadSavedThemeConfig, saveThemeConfig } from '../services/themeStore';
+import { getUserRegionInfo, setUserRegion, SUPPORTED_REGIONS } from '../services/regionStore';
 import { toWebpUrl } from '../utils/imageHelpers';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface EmbedSettingsState {
   embedServer: 'VidSrc Pro' | 'AutoEmbed VIP' | 'SuperEmbed HD' | '2Embed Stream';
@@ -122,6 +125,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  const [regionInfo, setRegionInfo] = useState(() => getUserRegionInfo());
+  const pwa = usePWAInstall();
+
+  const handleRegionSelect = (val: string) => {
+    if (val === 'AUTO') {
+      setUserRegion('AUTO', false);
+      const updated = getUserRegionInfo();
+      setRegionInfo(updated);
+      const reg = SUPPORTED_REGIONS.find((r) => r.code === updated.detectedCode);
+      showToast(`Region auto-detected: ${reg ? reg.name : updated.detectedCode}`);
+    } else {
+      setUserRegion(val, true);
+      const updated = getUserRegionInfo();
+      setRegionInfo(updated);
+      const reg = SUPPORTED_REGIONS.find((r) => r.code === val);
+      showToast(`Feed region set to ${reg ? reg.name : val}`);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -398,36 +419,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           </div>
         ) : (
-          /* Not Signed In: Show Trakt Connection Card with IndexedDB Fallback notice */
-          <div className="space-y-3">
-            <div className="flex items-start justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-white">Trakt.tv Cloud Sync</h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/10 text-neutral-300 border border-white/10">
-                    Optional
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-300 leading-relaxed max-w-sm">
-                  Connect your Trakt account to automatically scrobble playback from 3rd-party embed players and sync your watchlists.
-                </p>
+          /* Not Signed In: Clean Trakt Connection Row */
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-[#ff0040]/20 text-[#ff4b72] flex items-center justify-center font-bold">
+                <Cloud className="w-4 h-4" />
               </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center gap-2 text-[11px] text-neutral-300">
-              <Database className="w-4 h-4 text-neutral-400 shrink-0" />
-              <span>
-                <strong>Offline-first:</strong> All your watchlists, history, and drafts are saved securely in <strong>IndexedDB</strong> on this device.
-              </span>
+              <div className="text-xs font-semibold text-white">Trakt.tv Sync</div>
             </div>
 
             <button
               type="button"
               onClick={() => setIsSignInModalOpen(true)}
-              className="w-full py-2.5 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-neutral-950 font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              className="py-1.5 px-3.5 rounded-full bg-white hover:bg-neutral-200 text-neutral-950 font-semibold text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-[0.96]"
             >
-              <Cloud className="w-4 h-4" />
-              <span>Sign In with Trakt.tv</span>
+              <span>Connect</span>
             </button>
           </div>
         )}
@@ -439,6 +445,57 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         onThemeChanged={handleThemeChange}
         showToast={showToast}
       />
+
+      {/* ================= SECTION: FEED REGION LOCALIZATION ================= */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-3">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            Feed Region & Country
+          </h4>
+          <span className="text-[10px] text-neutral-400 font-medium">
+            {regionInfo.isManual ? 'Manual' : 'Auto-detected'}
+          </span>
+        </div>
+
+        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-base shrink-0">
+                {(SUPPORTED_REGIONS.find((r) => r.code === regionInfo.code)?.flag) || '🌐'}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-white truncate">
+                  {SUPPORTED_REGIONS.find((r) => r.code === regionInfo.code)?.name || 'Global'}
+                </div>
+                <div className="text-[10px] text-neutral-400 truncate">
+                  {regionInfo.isManual
+                    ? `Manual territory (${regionInfo.code})`
+                    : `Auto-detected from device (${SUPPORTED_REGIONS.find((r) => r.code === regionInfo.detectedCode)?.name || regionInfo.detectedCode})`}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative shrink-0">
+              <select
+                value={regionInfo.isManual ? regionInfo.code : 'AUTO'}
+                onChange={(e) => handleRegionSelect(e.target.value)}
+                className="appearance-none bg-white/10 hover:bg-white/15 text-white text-xs font-semibold pl-3 pr-8 py-2 rounded-2xl border border-white/10 outline-none cursor-pointer transition-all active:scale-[0.96]"
+                aria-label="Select feed region"
+              >
+                <option value="AUTO" className="bg-neutral-900 text-white">
+                  🌐 Auto ({SUPPORTED_REGIONS.find((r) => r.code === regionInfo.detectedCode)?.flag} {SUPPORTED_REGIONS.find((r) => r.code === regionInfo.detectedCode)?.name || regionInfo.detectedCode})
+                </option>
+                {SUPPORTED_REGIONS.map((r) => (
+                  <option key={r.code} value={r.code} className="bg-neutral-900 text-white">
+                    {r.flag} {r.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-neutral-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ================= SECTION 3: 3RD-PARTY EMBED PLAYER & STREAMING ================= */}
       <div className="space-y-2">
@@ -576,103 +633,48 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* ================= SECTION 4: DATA SAVER & BANDWIDTH OPTIMIZATION ================= */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between px-3">
-          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Network & Bandwidth Optimization
-          </h4>
-          <span
-            className={`text-[10px] font-medium flex items-center gap-1.5 ${
-              activeThemeConfig.dataSaverMode ? 'text-emerald-400' : 'text-neutral-400'
+      {/* ================= DATA SAVER ================= */}
+      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
+                activeThemeConfig.dataSaverMode
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'bg-white/5 text-neutral-300 border-white/10'
+              }`}
+            >
+              <WifiOff className="w-4 h-4" />
+            </div>
+            <div className="text-xs font-semibold text-white">Data Saver</div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const nextVal = !activeThemeConfig.dataSaverMode;
+              const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
+              handleThemeChange(nextCfg);
+              if (nextVal) {
+                updateSetting('autoPlayTrailers', false);
+                showToast('Data Saver on');
+              } else {
+                showToast('Data Saver off');
+              }
+            }}
+            className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+              activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
             }`}
+            aria-label="Toggle Data Saver"
           >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                activeThemeConfig.dataSaverMode ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'
+            <div
+              className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                activeThemeConfig.dataSaverMode
+                  ? 'translate-x-6 bg-neutral-950'
+                  : 'translate-x-1 bg-neutral-400'
               }`}
             />
-            {activeThemeConfig.dataSaverMode ? 'Data Saver Active' : 'Normal Fidelity'}
-          </span>
-        </div>
-
-        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 space-y-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
-                  activeThemeConfig.dataSaverMode
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                    : 'bg-white/5 text-neutral-300 border-white/10'
-                }`}
-              >
-                <WifiOff className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white flex items-center gap-2">
-                  Data Saver Mode
-                  {activeThemeConfig.dataSaverMode && (
-                    <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      ~85% Less Data
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-neutral-300 mt-0.5">
-                  Eliminates background downloads and halts idle timers.
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                const nextVal = !activeThemeConfig.dataSaverMode;
-                const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
-                handleThemeChange(nextCfg);
-                if (nextVal) {
-                  updateSetting('autoPlayTrailers', false);
-                  showToast('Data Saver activated: Idle cycling paused & bandwidth reduced');
-                } else {
-                  showToast('Standard fidelity restored');
-                }
-              }}
-              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-                activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
-              }`}
-              aria-label="Toggle Data Saver Mode"
-            >
-              <div
-                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                  activeThemeConfig.dataSaverMode
-                    ? 'translate-x-6 bg-neutral-950'
-                    : 'translate-x-1 bg-neutral-400'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-white/5">
-            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block font-medium">Idle Timers</span>
-              <span className="text-xs font-semibold text-white mt-0.5 block">
-                {activeThemeConfig.dataSaverMode ? 'Paused completely' : 'Calm 25s auto-cycle'}
-              </span>
-            </div>
-
-            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block font-medium">Catalog Preload</span>
-              <span className="text-xs font-semibold text-white mt-0.5 block">
-                {activeThemeConfig.dataSaverMode ? 'Disabled (0 MB)' : 'Minimal hero pre-warm'}
-              </span>
-            </div>
-
-            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block font-medium">Image Quality</span>
-              <span className="text-xs font-semibold text-white mt-0.5 block">
-                {activeThemeConfig.dataSaverMode ? 'Optimized WebP (w185/w342)' : 'Crisp WebP (w342/w780)'}
-              </span>
-            </div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -680,7 +682,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between px-3">
           <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-            Local Database & Storage (IndexedDB)
+            Storage & Database
           </h4>
           <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -692,22 +694,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           {/* Live DB Statistics Counter Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block">Watchlist Titles</span>
+              <span className="text-[10px] text-neutral-400 block">Watchlist</span>
               <span className="text-base font-bold text-white mt-0.5 block">{dbStats.watchlistCount}</span>
             </div>
 
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block">Playback History</span>
+              <span className="text-[10px] text-neutral-400 block">History</span>
               <span className="text-base font-bold text-white mt-0.5 block">{dbStats.historyCount}</span>
             </div>
 
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block">Drafted Reviews</span>
+              <span className="text-[10px] text-neutral-400 block">Reviews</span>
               <span className="text-base font-bold text-white mt-0.5 block">{dbStats.reviewsCount}</span>
             </div>
 
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
-              <span className="text-[10px] text-neutral-400 block">Storage Used</span>
+              <span className="text-[10px] text-neutral-400 block">Storage</span>
               <span className="text-base font-bold text-white mt-0.5 block">
                 {dbStats.storageUsageBytes ? formatBytes(dbStats.storageUsageBytes) : '< 1 MB'}
               </span>
@@ -722,7 +724,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="flex-1 py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-white/5"
             >
               <Download className="w-3.5 h-3.5 text-neutral-300" />
-              <span>Backup JSON</span>
+              <span>Backup</span>
             </button>
 
             <button
@@ -731,7 +733,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="flex-1 py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-white/5"
             >
               <Upload className="w-3.5 h-3.5 text-neutral-300" />
-              <span>Restore Backup</span>
+              <span>Restore</span>
             </button>
 
             <button
@@ -740,67 +742,83 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="py-2 px-3 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/20 text-xs font-semibold text-red-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              <span>Purge DB</span>
+              <span>Purge</span>
             </button>
           </div>
         </div>
       </div>
 
+      {/* ================= PWA INSTALLATION ================= */}
+      {!pwa.isInstalled && pwa.isInstallable && (
+        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-white/5 text-neutral-300 border border-white/10 flex items-center justify-center">
+                <Download className="w-4 h-4" />
+              </div>
+              <div className="text-xs font-semibold text-white">Install Refra</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => pwa.install()}
+              className="px-3.5 py-1.5 rounded-full bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold transition-all cursor-pointer active:scale-[0.96]"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ================= SECTION 5: HARDWARE HAPTICS & DISTORTION ================= */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-3">
-          Hardware Haptics & Distortion
+          Hardware & Interactions
         </h4>
         <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 divide-y divide-white/5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Smartphone className="w-4 h-4 text-neutral-400" />
-                <div>
-                  <div className="text-xs font-semibold text-white">Haptic Feedback</div>
-                  <div className="text-[11px] text-neutral-400">Micro-vibrations on taps and selections</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => updateSetting('hapticFeedback', !settings.hapticFeedback)}
-                className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-                  settings.hapticFeedback ? 'bg-white' : 'bg-white/10'
-                }`}
-                aria-label="Toggle Haptic Feedback"
-              >
-                <div
-                  className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                    settings.hapticFeedback ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
-                  }`}
-                />
-              </button>
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Smartphone className="w-4 h-4 text-neutral-400" />
+              <div className="text-xs font-semibold text-white">Haptic Feedback</div>
             </div>
+            <button
+              type="button"
+              onClick={() => updateSetting('hapticFeedback', !settings.hapticFeedback)}
+              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+                settings.hapticFeedback ? 'bg-white' : 'bg-white/10'
+              }`}
+              aria-label="Toggle Haptic Feedback"
+            >
+              <div
+                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                  settings.hapticFeedback ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+                }`}
+              />
+            </button>
+          </div>
 
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Layers className="w-4 h-4 text-neutral-400" />
-                <div>
-                  <div className="text-xs font-semibold text-white">SVG Liquid Glass Distortion</div>
-                  <div className="text-[11px] text-neutral-400">Optical turbulence filter behind glass surfaces</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => updateSetting('liquidDistortion', !settings.liquidDistortion)}
-                className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-                  settings.liquidDistortion ? 'bg-white' : 'bg-white/10'
-                }`}
-                aria-label="Toggle Liquid Distortion"
-              >
-                <div
-                  className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                    settings.liquidDistortion ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
-                  }`}
-                />
-              </button>
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Layers className="w-4 h-4 text-neutral-400" />
+              <div className="text-xs font-semibold text-white">Liquid Glass Distortion</div>
             </div>
+            <button
+              type="button"
+              onClick={() => updateSetting('liquidDistortion', !settings.liquidDistortion)}
+              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+                settings.liquidDistortion ? 'bg-white' : 'bg-white/10'
+              }`}
+              aria-label="Toggle Liquid Distortion"
+            >
+              <div
+                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                  settings.liquidDistortion ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+                }`}
+              />
+            </button>
           </div>
         </div>
+      </div>
 
       {/* ================= TRAKT SIGN-IN MODAL ================= */}
       <AnimatePresence>
@@ -819,7 +837,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Connect Trakt.tv</h3>
-                    <p className="text-[11px] text-neutral-400">Sync scrobbles, history & watchlist</p>
                   </div>
                 </div>
                 <button
@@ -842,16 +859,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-white/30"
                     autoFocus
                   />
-                </div>
-
-                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1">
-                  <div className="text-[11px] font-semibold text-white flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>Instant Cloud Sync</span>
-                  </div>
-                  <p className="text-[10px] text-neutral-400 leading-relaxed">
-                    Connecting your Trakt username will sync your watchlist from Trakt and back up all future scrobbles to your Trakt account.
-                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
@@ -892,7 +899,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-white">Purge Local Database?</h3>
                 <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                  This will remove all locally stored watchlists, playback history, and cached drafts from IndexedDB.
+                  All local watchlists and playback data will be cleared.
                 </p>
               </div>
 
@@ -909,7 +916,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   onClick={handlePurgeDatabase}
                   className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition-colors cursor-pointer"
                 >
-                  Purge Everything
+                  Purge
                 </button>
               </div>
             </motion.div>

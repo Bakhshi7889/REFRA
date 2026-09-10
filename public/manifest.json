@@ -1,11 +1,16 @@
 {
   "id": "/",
-  "name": "Refra — 4K Cinema",
+  "name": "Refra — 4K Ad-Free Cinema",
   "short_name": "Refra",
   "description": "Minimalist ad-free 4K cinematic streaming and anime discovery platform.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "window-controls-overlay",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "theme_color": "#0c0d10",
   "background_color": "#0c0d10",
@@ -34,10 +39,58 @@
       "purpose": "maskable"
     },
     {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Explore Movies",
+      "short_name": "Explore",
+      "description": "Discover trending 4K cinema and anime",
+      "url": "/?tab=explore",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "My Watchlist",
+      "short_name": "Watchlist",
+      "description": "Access your saved cinema and series",
+      "url": "/?tab=watchlist",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/wallpapers/01dd13b382b5606cb776873ae1d29d6f.webp",
+      "sizes": "1280x720",
+      "type": "image/webp",
+      "form_factor": "wide",
+      "label": "Refra 4K Cinematic Stream Interface"
+    },
+    {
+      "src": "/wallpapers/27ac17b86ee639144476b9b158b779f1.webp",
+      "sizes": "720x1280",
+      "type": "image/webp",
+      "form_factor": "narrow",
+      "label": "Refra Mobile Cinema Experience"
     }
   ]
 }

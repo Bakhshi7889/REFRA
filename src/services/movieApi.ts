@@ -1,5 +1,6 @@
 import { Movie, Review } from '../types';
 import { FALLBACK_MOVIES } from '../data/movies';
+import { getUserRegion } from './regionStore';
 
 const TMDB_KEY = '2c46bcbb68760c2e8d35ec05a46e0c78';
 
@@ -7,8 +8,12 @@ const TMDB_KEY = '2c46bcbb68760c2e8d35ec05a46e0c78';
 let isServerAvailable: boolean | null = null;
 
 // In-memory cache to prevent excessive requests (6 hours TTL)
-const clientCache: Record<string, { data: any; timestamp: number }> = {};
+let clientCache: Record<string, { data: any; timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 hours
+
+export function clearMovieApiCache(): void {
+  clientCache = {};
+}
 
 export async function checkServerAvailable(): Promise<boolean> {
   if (isServerAvailable !== null) return isServerAvailable;
@@ -373,11 +378,13 @@ async function directFetchAniList(perPage = 16): Promise<Movie[]> {
 
 // ---------------- PUBLIC EXPORTED FUNCTIONS ----------------
 
-export async function fetchSpotlightMovies(): Promise<Movie[]> {
+export async function fetchSpotlightMovies(regionOverride?: string): Promise<Movie[]> {
+  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
   const hasServer = await checkServerAvailable();
   if (hasServer) {
     try {
-      const res = await fetch('/api/movies/spotlight');
+      const url = region ? `/api/movies/spotlight?region=${region}` : '/api/movies/spotlight';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.movies && data.movies.length > 0) return data.movies;
@@ -388,7 +395,11 @@ export async function fetchSpotlightMovies(): Promise<Movie[]> {
   }
 
   try {
-    const directMovies = await directFetchTmdbMovies('trending/movie/week');
+    const endpoint = region ? `movie/now_playing?region=${region}&page=1` : 'trending/movie/week';
+    let directMovies = await directFetchTmdbMovies(endpoint);
+    if (directMovies.length === 0 && region) {
+      directMovies = await directFetchTmdbMovies('trending/movie/week');
+    }
     if (directMovies.length > 0) {
       const top5 = directMovies.slice(0, 5);
       const enriched = await Promise.all(
@@ -423,11 +434,13 @@ export async function fetchSpotlightMovies(): Promise<Movie[]> {
   return FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured);
 }
 
-export async function fetchTrendingMovies(): Promise<Movie[]> {
+export async function fetchTrendingMovies(regionOverride?: string): Promise<Movie[]> {
+  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
   const hasServer = await checkServerAvailable();
   if (hasServer) {
     try {
-      const res = await fetch('/api/movies/trending');
+      const url = region ? `/api/movies/trending?region=${region}` : '/api/movies/trending';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.movies && data.movies.length > 0) return data.movies;
@@ -438,7 +451,8 @@ export async function fetchTrendingMovies(): Promise<Movie[]> {
   }
 
   try {
-    const directMovies = await directFetchTmdbMovies('movie/popular?page=1');
+    const endpoint = region ? `movie/popular?region=${region}&page=1` : 'movie/popular?page=1';
+    const directMovies = await directFetchTmdbMovies(endpoint);
     if (directMovies.length > 0) return directMovies;
   } catch (err) {
     console.warn('Direct TMDB trending error:', err);
@@ -447,11 +461,13 @@ export async function fetchTrendingMovies(): Promise<Movie[]> {
   return FALLBACK_MOVIES;
 }
 
-export async function fetchTopRatedMovies(): Promise<Movie[]> {
+export async function fetchTopRatedMovies(regionOverride?: string): Promise<Movie[]> {
+  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
   const hasServer = await checkServerAvailable();
   if (hasServer) {
     try {
-      const res = await fetch('/api/movies/top_rated');
+      const url = region ? `/api/movies/top_rated?region=${region}` : '/api/movies/top_rated';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.movies && data.movies.length > 0) return data.movies;
@@ -462,7 +478,8 @@ export async function fetchTopRatedMovies(): Promise<Movie[]> {
   }
 
   try {
-    const directMovies = await directFetchTmdbMovies('movie/top_rated?page=1');
+    const endpoint = region ? `movie/top_rated?region=${region}&page=1` : 'movie/top_rated?page=1';
+    const directMovies = await directFetchTmdbMovies(endpoint);
     if (directMovies.length > 0) return directMovies;
   } catch (err) {
     console.warn('Direct TMDB top rated error:', err);
@@ -591,6 +608,112 @@ export async function fetchSciFiMovies(): Promise<Movie[]> {
   }
 
   return FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'));
+}
+
+// ---------------- INDIA-SPECIFIC CINEMA FEEDS ----------------
+
+export async function fetchIndiaTrending(): Promise<Movie[]> {
+  const hasServer = await checkServerAvailable();
+  if (hasServer) {
+    try {
+      const res = await fetch('/api/movies/india/trending');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.movies && data.movies.length > 0) return data.movies;
+      }
+    } catch {
+      isServerAvailable = false;
+    }
+  }
+
+  try {
+    const direct = await directFetchTmdbMovies(
+      'discover/movie?watch_region=IN&sort_by=popularity.desc&region=IN&page=1'
+    );
+    if (direct.length > 0) return direct;
+  } catch (err) {
+    console.warn('Direct TMDB India trending error:', err);
+  }
+
+  return FALLBACK_MOVIES;
+}
+
+export async function fetchBollywoodMovies(): Promise<Movie[]> {
+  const hasServer = await checkServerAvailable();
+  if (hasServer) {
+    try {
+      const res = await fetch('/api/movies/india/bollywood');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.movies && data.movies.length > 0) return data.movies;
+      }
+    } catch {
+      isServerAvailable = false;
+    }
+  }
+
+  try {
+    const direct = await directFetchTmdbMovies(
+      'discover/movie?with_origin_country=IN&with_original_language=hi&sort_by=popularity.desc&page=1'
+    );
+    if (direct.length > 0) return direct;
+  } catch (err) {
+    console.warn('Direct TMDB Bollywood error:', err);
+  }
+
+  return FALLBACK_MOVIES;
+}
+
+export async function fetchSouthIndianMovies(): Promise<Movie[]> {
+  const hasServer = await checkServerAvailable();
+  if (hasServer) {
+    try {
+      const res = await fetch('/api/movies/india/south');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.movies && data.movies.length > 0) return data.movies;
+      }
+    } catch {
+      isServerAvailable = false;
+    }
+  }
+
+  try {
+    const direct = await directFetchTmdbMovies(
+      'discover/movie?with_origin_country=IN&with_original_language=ta|te|ml|kn&sort_by=popularity.desc&page=1'
+    );
+    if (direct.length > 0) return direct;
+  } catch (err) {
+    console.warn('Direct TMDB South Indian error:', err);
+  }
+
+  return FALLBACK_MOVIES;
+}
+
+export async function fetchIndianSeries(): Promise<Movie[]> {
+  const hasServer = await checkServerAvailable();
+  if (hasServer) {
+    try {
+      const res = await fetch('/api/movies/india/series');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.movies && data.movies.length > 0) return data.movies;
+      }
+    } catch {
+      isServerAvailable = false;
+    }
+  }
+
+  try {
+    const direct = await directFetchTmdbMovies(
+      'discover/tv?with_origin_country=IN&sort_by=popularity.desc&page=1'
+    );
+    if (direct.length > 0) return direct;
+  } catch (err) {
+    console.warn('Direct TMDB Indian series error:', err);
+  }
+
+  return FALLBACK_MOVIES;
 }
 
 export async function searchMovies(query: string): Promise<Movie[]> {
@@ -818,9 +941,10 @@ export type WatchProvider = {
   logo_path: string;
 };
 
-export async function fetchWatchProviders(region: string = 'IN'): Promise<WatchProvider[]> {
+export async function fetchWatchProviders(region?: string): Promise<WatchProvider[]> {
   try {
-    const data = await directFetchTmdbRaw(`watch/providers/movie?watch_region=${region}`);
+    const activeRegion = region || getUserRegion() || 'US';
+    const data = await directFetchTmdbRaw(`watch/providers/movie?watch_region=${activeRegion}`);
     return data.results || [];
   } catch (err) {
     console.warn('Providers fetch error', err);
@@ -849,26 +973,22 @@ export async function discoverMoviesWithFilters(
   try {
     if (filters.query) {
       if (type === 'all') {
-        const [movieData, tvData] = await Promise.all([
-          directFetchTmdbRaw(`search/movie?query=${encodeURIComponent(filters.query)}`),
-          directFetchTmdbRaw(`search/tv?query=${encodeURIComponent(filters.query)}`)
-        ]);
-        const moviesFormatted = (movieData.results || []).map((m: any) => formatTmdbMovie(m, 'movie'));
-        const tvFormatted = (tvData.results || []).map((m: any) => formatTmdbMovie(m, 'tv'));
-        const combined = [...moviesFormatted, ...tvFormatted]
-          .sort((a, b) => parseFloat(b.score) - parseFloat(a.score))
-          .slice(0, 20);
-        return combined;
+        const data = await directFetchTmdbRaw(`search/multi?query=${encodeURIComponent(filters.query)}`);
+        const results = (data.results || [])
+          .filter((item: any) => item.media_type === 'movie' || item.media_type === 'tv')
+          .slice(0, 24);
+        return results.map((item: any) => formatTmdbMovie(item, item.media_type));
       } else {
         const data = await directFetchTmdbRaw(`search/${type}?query=${encodeURIComponent(filters.query)}`);
-        const items = (data.results || []).slice(0, 20);
+        const items = (data.results || []).slice(0, 24);
         return items.map((m: any) => formatTmdbMovie(m, type));
       }
     } else {
       const getEndpoint = (t: 'movie' | 'tv') => {
-        // Use appropriate watch region: US for US-only providers like HBO, Peacock, Hulu
+        // Use user-selected region or fallback to US for US-only providers
+        const userReg = getUserRegion() || 'US';
         const usOnlyProviders = [15, 384, 1825, 386, 2303];
-        const region = filters.providerId && usOnlyProviders.includes(filters.providerId) ? 'US' : 'IN';
+        const region = filters.providerId && usOnlyProviders.includes(filters.providerId) ? 'US' : userReg;
 
         let endpoint = `discover/${t}?watch_region=${region}`;
         if (filters.providerId) endpoint += `&with_watch_providers=${filters.providerId}`;
@@ -906,6 +1026,10 @@ export async function discoverMoviesWithFilters(
         // Original language filter
         if (filters.language && filters.language !== 'all') {
           endpoint += `&with_original_language=${filters.language}`;
+          const indianLangs = ['hi', 'ta', 'te', 'ml', 'kn', 'bn'];
+          if (indianLangs.includes(filters.language)) {
+            endpoint += '&with_origin_country=IN';
+          }
         }
 
         // Sorting

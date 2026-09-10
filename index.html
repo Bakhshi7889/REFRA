@@ -84,6 +84,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="alternate" type="application/manifest+json" href="/manifest.json" />
     
     <!-- PWA Installation & Native Mobile OS Integration (Android, Windows, Mac, iOS) -->
     <meta name="theme-color" content="#0c0d10" />
@@ -91,9 +92,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Refra" />
+    <meta name="application-name" content="Refra" />
+    <meta name="msapplication-TileColor" content="#0c0d10" />
+    <meta name="msapplication-TileImage" content="/pwa-192x192.png" />
+    <meta name="msapplication-tap-highlight" content="no" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
+    <link rel="mask-icon" href="/favicon.svg" color="#0c0d10" />
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -138,7 +144,7 @@
             <feFuncR type="linear" slope="1.45" intercept="-0.225" />
             <feFuncG type="linear" slope="1.45" intercept="-0.225" />
           </feComponentTransfer>
-          <feDisplacementMap id="liquid-glass-dynamic-map" in="SourceGraphic" in2="lensDisplacement" scale="18" xChannelSelector="R" yChannelSelector="G" />
+          <feDisplacementMap id="liquid-glass-dynamic-map" in="SourceGraphic" in2="lensDisplacement" scale="40" xChannelSelector="R" yChannelSelector="G" />
         </filter>
 
         <!-- Crystal Clear Lens (High clarity, anisotropic peripheral edge-stretch & optical refraction) -->

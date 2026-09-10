@@ -680,7 +680,11 @@ app.use((req, res, next) => {
   // API Routes
   app.get('/api/movies/spotlight', async (req, res) => {
     try {
-      const url = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}`;
+      const rawRegion = req.query.region as string;
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const url = cleanRegion
+        ? `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=1&region=${cleanRegion}`
+        : `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
       const data = await response.json();
@@ -696,7 +700,9 @@ app.use((req, res, next) => {
 
   app.get('/api/movies/trending', async (req, res) => {
     try {
-      const url = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=1`;
+      const rawRegion = req.query.region as string;
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const url = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=1${cleanRegion ? `&region=${cleanRegion}` : ''}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
       const data = await response.json();
@@ -712,7 +718,9 @@ app.use((req, res, next) => {
 
   app.get('/api/movies/top_rated', async (req, res) => {
     try {
-      const url = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}&page=1`;
+      const rawRegion = req.query.region as string;
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const url = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}&page=1${cleanRegion ? `&region=${cleanRegion}` : ''}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
       const data = await response.json();
@@ -747,6 +755,70 @@ app.use((req, res, next) => {
     } catch (err: any) {
       console.error('Error fetching anime:', err.message);
       res.status(500).json({ error: 'Failed to fetch anime movies' });
+    }
+  });
+
+  // India Cinema Feed: Trending in India
+  app.get('/api/movies/india/trending', async (req, res) => {
+    try {
+      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&watch_region=IN&sort_by=popularity.desc&region=IN&page=1`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('TMDB error');
+      const data = await response.json();
+      const items = (data.results || []).slice(0, 16);
+      const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      res.json({ movies });
+    } catch (err: any) {
+      console.error('Error fetching India trending:', err.message);
+      res.status(500).json({ error: 'Failed to fetch India trending movies' });
+    }
+  });
+
+  // India Cinema Feed: Bollywood & Hindi Movies
+  app.get('/api/movies/india/bollywood', async (req, res) => {
+    try {
+      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_origin_country=IN&with_original_language=hi&sort_by=popularity.desc&page=1`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('TMDB error');
+      const data = await response.json();
+      const items = (data.results || []).slice(0, 16);
+      const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      res.json({ movies });
+    } catch (err: any) {
+      console.error('Error fetching Bollywood:', err.message);
+      res.status(500).json({ error: 'Failed to fetch Bollywood movies' });
+    }
+  });
+
+  // India Cinema Feed: South Indian Cinema (Tamil, Telugu, Malayalam, Kannada)
+  app.get('/api/movies/india/south', async (req, res) => {
+    try {
+      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_origin_country=IN&with_original_language=ta|te|ml|kn&sort_by=popularity.desc&page=1`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('TMDB error');
+      const data = await response.json();
+      const items = (data.results || []).slice(0, 16);
+      const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      res.json({ movies });
+    } catch (err: any) {
+      console.error('Error fetching South Indian movies:', err.message);
+      res.status(500).json({ error: 'Failed to fetch South Indian movies' });
+    }
+  });
+
+  // India Cinema Feed: Indian TV & Web Series
+  app.get('/api/movies/india/series', async (req, res) => {
+    try {
+      const url = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&with_origin_country=IN&sort_by=popularity.desc&page=1`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('TMDB error');
+      const data = await response.json();
+      const items = (data.results || []).slice(0, 16);
+      const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      res.json({ movies });
+    } catch (err: any) {
+      console.error('Error fetching Indian series:', err.message);
+      res.status(500).json({ error: 'Failed to fetch Indian series' });
     }
   });
 
