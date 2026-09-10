@@ -209,7 +209,8 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 if (isDraggingRef.current) return;
                 onMovieClick(movie, e.currentTarget.getBoundingClientRect());
               }}
-              className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
+              style={{ contain: 'layout paint' }}
+              className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group compositor-card"
             >
               {/* Full Poster Image */}
               <img

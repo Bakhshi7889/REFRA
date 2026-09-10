@@ -1,6 +1,18 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  securityHeadersMiddleware,
+  forceHttpsMiddleware,
+  createRateLimiter,
+  botAndWafProtectionMiddleware,
+  escapeHtml,
+  isValidMediaId,
+  clampNumber,
+  restrictUploadsMiddleware,
+  safeErrorHandler,
+} from './src/server/security';
+import { handleImageOptimization } from './src/server/imageOptimizer';
 
 const TMDB_KEY = process.env.TMDB_API_KEY || '2c46bcbb68760c2e8d35ec05a46e0c78';
 const OMDB_KEY = process.env.OMDB_API_KEY || '67ce1c2a';
@@ -9,7 +21,35 @@ const MDBLIST_KEY = process.env.MDBLIST_API_KEY || 'xd3z19vdc36r0wkuhkr49f3in';
 
 
 export const app = express();
-app.use(express.json());
+
+// Disable express server banner to prevent targeted banner grabbing
+app.disable('x-powered-by');
+
+// Enforce HTTPS
+app.use(forceHttpsMiddleware);
+
+// Strict Security Headers (CSP, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+app.use(securityHeadersMiddleware);
+
+// Bot Protection & WAF heuristic filters (blocking scanners, path traversal, script injection)
+app.use(botAndWafProtectionMiddleware);
+
+// File upload payload restriction
+app.use(restrictUploadsMiddleware);
+
+// High-capacity Image Rate Limiter (3,000 requests / minute) for WebP image proxying
+const imageRateLimiter = createRateLimiter({
+  maxRequests: 3000,
+  windowMs: 60 * 1000,
+  message: 'Image rate limit exceeded. Please slow down.',
+});
+app.get('/api/image', imageRateLimiter, handleImageOptimization);
+app.get('/api/image-proxy', imageRateLimiter, handleImageOptimization);
+
+// Global API rate limiter: 150 requests / minute per IP for data endpoints
+
+// Parse JSON with 500kb limit to protect against large memory exhaustion payloads
+app.use(express.json({ limit: '500kb' }));
 
 // Normalize Netlify serverless path rewrite so /.netlify/functions/api/* maps to /api/*
 app.use((req, res, next) => {
@@ -19,9 +59,95 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global API rate limiter: 150 requests / minute per IP for data endpoints (excluding images)
+const apiRateLimiter = createRateLimiter({
+  maxRequests: 150,
+  windowMs: 60 * 1000,
+  message: 'Too many requests. Please slow down.',
+});
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/image')) {
+    return next();
+  }
+  if (req.path.startsWith('/api/')) {
+    return apiRateLimiter(req, res, next);
+  }
+  next();
+});
+
   // Cache to avoid aggressive rate-limits
   const cache: Record<string, { data: any; timestamp: number }> = {};
   const CACHE_TTL = 1000 * 60 * 30; // 30 mins
+
+  // Secure TMDB API Proxy with strict path allowlisting and validation (keeps TMDB API key hidden on server)
+  app.get('/api/tmdb/proxy', async (req, res) => {
+    try {
+      const endpoint = req.query.endpoint as string;
+      if (!endpoint || typeof endpoint !== 'string') {
+        return res.status(400).json({ error: 'Endpoint parameter is required' });
+      }
+
+      // Security check: disallow URL schemes, traversal, protocol relative, or SSRF targets
+      if (
+        endpoint.includes('://') ||
+        endpoint.startsWith('//') ||
+        endpoint.includes('..') ||
+        endpoint.includes('\0') ||
+        endpoint.includes('%00')
+      ) {
+        return res.status(400).json({ error: 'Invalid endpoint format' });
+      }
+
+      // Allowlist of legitimate TMDB endpoints
+      const allowedPrefixes = [
+        'discover/movie',
+        'discover/tv',
+        'search/movie',
+        'search/tv',
+        'search/multi',
+        'movie/',
+        'tv/',
+        'genre/movie/list',
+        'genre/tv/list',
+        'watch/providers/movie',
+        'watch/providers/tv',
+        'trending/',
+        'person/',
+        'company/',
+      ];
+
+      const cleanEndpoint = endpoint.replace(/^\/+/, '');
+      const isAllowed = allowedPrefixes.some((prefix) => cleanEndpoint.startsWith(prefix));
+      if (!isAllowed) {
+        return res.status(403).json({ error: 'Endpoint is not permitted by API proxy policy' });
+      }
+
+      const cacheKey = `tmdb_proxy_${cleanEndpoint}`;
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
+        return res.json(cache[cacheKey].data);
+      }
+
+      const sep = cleanEndpoint.includes('?') ? '&' : '?';
+      const url = `https://api.themoviedb.org/3/${cleanEndpoint}${sep}api_key=${TMDB_KEY}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Upstream TMDB error ${response.status}` });
+      }
+
+      const data = await response.json();
+      cache[cacheKey] = { data, timestamp: Date.now() };
+
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: 'Failed to proxy TMDB request' });
+    }
+  });
 
   // Helper for Fanart.tv
   async function getFanartData(tmdbId: number | string) {
@@ -247,10 +373,19 @@ app.use((req, res, next) => {
     const tmdbId = tmdbMovie.id;
     let details = tmdbMovie;
 
-    if (fullDetails || !tmdbMovie.runtime) {
+    const isTv = Boolean(
+      tmdbMovie.first_air_date ||
+      tmdbMovie.name ||
+      tmdbMovie.original_name ||
+      tmdbMovie.number_of_seasons ||
+      tmdbMovie.media_type === 'tv'
+    );
+
+    if (fullDetails || (!tmdbMovie.runtime && !tmdbMovie.episode_run_time && !tmdbMovie.number_of_seasons)) {
       try {
+        const endpoint = isTv ? 'tv' : 'movie';
         const detRes = await fetch(
-          `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers`
+          `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers&include_image_language=en,null`
         );
         if (detRes.ok) {
           details = await detRes.json();
@@ -263,7 +398,7 @@ app.use((req, res, next) => {
     const [fanartData, kinoTrailerId, omdbData] = await Promise.all([
       getFanartData(tmdbId),
       getKinoCheckTrailer(tmdbId),
-      details.imdb_id ? getOmdbData(details.imdb_id, details.title) : Promise.resolve(null),
+      details.imdb_id ? getOmdbData(details.imdb_id, details.title || details.name) : Promise.resolve(null),
     ]);
 
     // Backdrops aggregation (TMDB + Fanart.tv)
@@ -297,14 +432,23 @@ app.use((req, res, next) => {
       });
     }
 
-    // Logo aggregation
+    // Logo aggregation (TMDB clearlogo PNG + Fanart.tv)
     let logoUrl: string | undefined;
-    if (fanartData?.hdmovielogo?.[0]?.url) {
-      logoUrl = fanartData.hdmovielogo[0].url;
-    } else if (fanartData?.movielogo?.[0]?.url) {
-      logoUrl = fanartData.movielogo[0].url;
-    } else if (details.images?.logos?.[0]?.file_path) {
-      logoUrl = `https://image.tmdb.org/t/p/w500${details.images.logos[0].file_path}`;
+    if (details.images?.logos && details.images.logos.length > 0) {
+      const enLogo =
+        details.images.logos.find((l: any) => l.iso_639_1 === 'en') ||
+        details.images.logos.find((l: any) => !l.iso_639_1) ||
+        details.images.logos[0];
+      if (enLogo?.file_path) {
+        logoUrl = `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
+      }
+    }
+    if (!logoUrl) {
+      if (fanartData?.hdmovielogo?.[0]?.url) {
+        logoUrl = fanartData.hdmovielogo[0].url;
+      } else if (fanartData?.movielogo?.[0]?.url) {
+        logoUrl = fanartData.movielogo[0].url;
+      }
     }
 
     // Trailer lookup (KinoCheck > TMDB YouTube videos)
@@ -418,17 +562,44 @@ app.use((req, res, next) => {
 
     const awards = omdbData?.Awards && omdbData.Awards !== 'N/A' ? omdbData.Awards : undefined;
 
-    const genres =
-      details.genres?.map((g: any) => g.name) ||
-      (omdbData?.Genre ? omdbData.Genre.split(', ') : ['Cinema']);
+    const TMDB_GENRE_NAMES: Record<number, string> = {
+      28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+      99: 'Documentary', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+      27: 'Horror', 10402: 'Music', 9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi',
+      10770: 'TV Movie', 53: 'Thriller', 10752: 'War', 37: 'Western',
+      10759: 'Action & Adventure', 10762: 'Kids', 10763: 'News', 10764: 'Reality',
+      10765: 'Sci-Fi & Fantasy', 10766: 'Soap', 10767: 'Talk', 10768: 'War & Politics',
+    };
 
-    const duration = details.runtime
-      ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}m`
-      : omdbData?.Runtime || '2h 10m';
+    let genres: string[] = [];
+    if (Array.isArray(details.genres) && details.genres.length > 0) {
+      genres = details.genres.map((g: any) => (typeof g === 'string' ? g : g.name)).filter(Boolean);
+    } else if (Array.isArray(details.genre_ids) && details.genre_ids.length > 0) {
+      genres = details.genre_ids.map((id: number) => TMDB_GENRE_NAMES[id]).filter(Boolean);
+    } else if (omdbData?.Genre) {
+      genres = omdbData.Genre.split(', ');
+    }
+    if (genres.length === 0) {
+      genres = isTv ? ['Series', 'Drama'] : ['Cinema', 'Drama'];
+    }
 
-    const releaseYear = details.release_date
-      ? new Date(details.release_date).getFullYear()
-      : parseInt(omdbData?.Year || '2025', 10);
+    let duration = '2h 10m';
+    if (details.runtime) {
+      duration = `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}m`;
+    } else if (details.number_of_seasons) {
+      duration = `${details.number_of_seasons} Season${details.number_of_seasons > 1 ? 's' : ''}`;
+    } else if (details.episode_run_time && details.episode_run_time.length > 0) {
+      duration = `${details.episode_run_time[0]}m / ep`;
+    } else if (omdbData?.Runtime && omdbData.Runtime !== 'N/A') {
+      duration = omdbData.Runtime;
+    } else if (isTv) {
+      duration = 'Series';
+    }
+
+    const dateStr = details.release_date || details.first_air_date;
+    const releaseYear = dateStr
+      ? new Date(dateStr).getFullYear()
+      : parseInt(omdbData?.Year || '2024', 10);
 
     const score = details.vote_average
       ? details.vote_average.toFixed(1)
@@ -448,16 +619,27 @@ app.use((req, res, next) => {
     const resolutions = ['4K HDR', '4K UHD', 'IMAX Enhanced'] as const;
     const resolution = resolutions[tmdbId % resolutions.length];
 
+    const title =
+      details.title ||
+      details.name ||
+      details.original_title ||
+      details.original_name ||
+      omdbData?.Title ||
+      (isTv ? 'Featured Series' : 'Featured Film');
+
+    const tagline = details.tagline || omdbData?.Plot?.slice(0, 80) || (isTv ? 'Acclaimed Streaming Series' : 'Pure visual immersion');
+    const synopsis = details.overview || omdbData?.Plot || (isTv ? 'Original television series streaming in high definition.' : 'A cinematic voyage crafted for large screens.');
+
     return {
-      id: `tmdb_${tmdbId}`,
+      id: isTv ? `tmdb_tv_${tmdbId}` : `tmdb_${tmdbId}`,
       tmdbId,
       imdbId: details.imdb_id || omdbData?.imdbID,
-      title: details.title || omdbData?.Title || 'Cinema Masterwork',
-      tagline: details.tagline || omdbData?.Plot?.slice(0, 80) || 'Pure visual immersion',
-      synopsis: details.overview || omdbData?.Plot || 'A cinematic voyage crafted for large screens.',
+      title,
+      tagline,
+      synopsis,
       releaseYear,
       score,
-      certification: omdbData?.Rated && omdbData.Rated !== 'N/A' ? omdbData.Rated : 'PG-13',
+      certification: omdbData?.Rated && omdbData.Rated !== 'N/A' ? omdbData.Rated : isTv ? 'TV-14' : 'PG-13',
       duration,
       genres,
       director,
@@ -744,29 +926,54 @@ app.use((req, res, next) => {
     }
   });
 
-  // Post User Review Endpoint
+  // Post User Review Endpoint (strictly validated, sanitized, and anti-tampered)
   app.post('/api/reviews/:mediaId/create', (req, res) => {
     try {
       const { mediaId } = req.params;
-      const { author, rating, content, isSpoiler, tags } = req.body;
+      if (!isValidMediaId(mediaId)) {
+        return res.status(400).json({ error: 'Invalid media identifier' });
+      }
 
-      if (!content || !content.trim()) {
+      const { author, rating, content, isSpoiler, tags } = req.body || {};
+
+      if (!content || typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: 'Review content is required' });
       }
 
+      if (content.length > 2000) {
+        return res.status(400).json({ error: 'Review content exceeds 2000 character limit' });
+      }
+
+      const safeAuthor = author && typeof author === 'string'
+        ? escapeHtml(author.trim().slice(0, 40))
+        : 'Refra Cinephile';
+
+      const safeContent = escapeHtml(content.trim());
+      const safeRating = clampNumber(rating, 1, 10, 10);
+      const safeSpoiler = Boolean(isSpoiler);
+
+      const safeTags: string[] = Array.isArray(tags)
+        ? tags
+            .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+            .slice(0, 5)
+            .map((t) => escapeHtml(t.trim().slice(0, 25)))
+        : ['Verified Watcher', 'Refra Member'];
+
+      // Server generates authoritative ID and timestamp to block client tampering
       const newReview = {
-        id: `user_rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        author: author || 'Refra Cinephile',
+        id: `user_rev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        author: safeAuthor,
         authorAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-        score: `${rating || 10}/10`,
-        rating: Number(rating) || 10,
+        score: `${safeRating}/10`,
+        rating: safeRating,
         date: 'Just now',
-        content: content.trim(),
-        tags: tags || ['Verified Watcher', 'Refra Pro'],
-        isSpoiler: Boolean(isSpoiler),
+        content: safeContent,
+        tags: safeTags,
+        isSpoiler: safeSpoiler,
         source: 'Refra Community' as const,
-        recommended: (Number(rating) || 10) >= 7,
-        reactions: { helpful: 1, love: 1 },
+        recommended: safeRating >= 7,
+        reactions: { helpful: 0, love: 0 },
+        createdAt: new Date().toISOString(),
       };
 
       if (!userReviewsStore[mediaId]) {
@@ -775,7 +982,7 @@ app.use((req, res, next) => {
       userReviewsStore[mediaId].unshift(newReview);
 
       res.status(201).json({ review: newReview, success: true });
-    } catch (err: any) {
+    } catch {
       res.status(500).json({ error: 'Failed to post review' });
     }
   });
@@ -880,11 +1087,15 @@ app.use((req, res, next) => {
     }
   });
 
-  // Scrobble / Playback sync endpoint
+  // Scrobble / Playback sync endpoint (validated)
   app.post('/api/trakt/scrobble', (req, res) => {
-    const { action, movie, progress } = req.body;
-    console.log(`[Trakt Scrobble] Action: ${action}, Title: ${movie?.title}, Progress: ${progress}%`);
-    res.json({ success: true, scrobbledAt: new Date().toISOString() });
+    const { action, movie, progress } = req.body || {};
+    const validActions = ['start', 'pause', 'stop'];
+    const safeAction = validActions.includes(action) ? action : 'pause';
+    const safeProgress = clampNumber(progress, 0, 100, 0);
+    const safeTitle = movie?.title && typeof movie.title === 'string' ? escapeHtml(movie.title.slice(0, 100)) : 'Unknown Title';
+
+    res.json({ success: true, action: safeAction, title: safeTitle, progress: safeProgress, scrobbledAt: new Date().toISOString() });
   });
 
   app.get('/api/movies/action', async (req, res) => {
@@ -958,14 +1169,29 @@ app.use((req, res, next) => {
     }
   });
 
-  // Movie Details with Fanart & KinoCheck
+  // Movie/TV Details with Fanart & KinoCheck
   app.get('/api/movies/:id', async (req, res) => {
     try {
       const rawId = req.params.id;
-      const tmdbId = rawId.replace('tmdb_', '');
-      const detRes = await fetch(
-        `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers`
-      );
+      const isTvReq = rawId.startsWith('tmdb_tv_');
+      const tmdbId = rawId.replace(/^tmdb_(tv_)?/, '');
+
+      let detRes: any;
+      if (isTvReq) {
+        detRes = await fetch(
+          `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers`
+        );
+      } else {
+        detRes = await fetch(
+          `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers`
+        );
+        if (!detRes.ok) {
+          detRes = await fetch(
+            `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images,watch/providers`
+          );
+        }
+      }
+
       if (!detRes.ok) return res.status(404).json({ error: 'Not found' });
       const raw = await detRes.json();
       const movie = await formatTmdbMovie(raw, true);
@@ -1539,10 +1765,10 @@ app.use((req, res, next) => {
         const downloadFileName = `${title.replace(/[^a-zA-Z0-9_\s-]/g, '').trim()} (${year}) [${quality}].mp4`;
 
         if (item.url) {
-          directProxyUrl = `/api/stream/proxy?url=${encodeURIComponent(item.url)}&filename=${encodeURIComponent(downloadFileName)}`;
-          directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(item.url)}&download=1&filename=${encodeURIComponent(downloadFileName)}`;
+          directProxyUrl = item.url;
+          directDownloadUrl = item.url;
         } else {
-          directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(playUrl)}&download=1&filename=${encodeURIComponent(downloadFileName)}`;
+          directDownloadUrl = playUrl;
         }
 
         const sizeInGb = (fileSizeBytes || sizeNum * 1024 * 1024 * 1024) / (1024 * 1024 * 1024);
@@ -1970,8 +2196,8 @@ app.use((req, res, next) => {
 
       res.json(responsePayload);
     } catch (err: any) {
-      console.error('Streams route error:', err);
-      res.status(500).json({ error: 'Failed to retrieve streams', details: err.message });
+      console.error('Streams route error:', err?.message);
+      res.status(500).json({ error: 'Failed to retrieve streams' });
     }
   });
 
@@ -1980,5 +2206,8 @@ app.use((req, res, next) => {
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
+
+  // Attach centralized safe error handler (trims internal stack traces and server secrets)
+  app.use(safeErrorHandler);
 
 export default app;

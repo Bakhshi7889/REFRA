@@ -20,12 +20,12 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, ExpansionOrigin } from '../types';
-import { getBackdropUrl, getPosterUrl } from '../utils/imageHelpers';
+import { getBackdropUrl, getPosterUrl, toWebpUrl } from '../utils/imageHelpers';
 import { ReviewsSection } from './ReviewsSection';
 import { trackStreamStart } from '../services/analytics';
-import { DownloadExpander } from './DownloadExpander';
 import { ArtworkLightboxModal } from './ArtworkLightboxModal';
 import { lockScroll } from '../utils/scrollLock';
+import { isDataSaverActive } from '../services/themeStore';
 
 interface MovieDetailsModalProps {
   movie: Movie | null;
@@ -35,6 +35,7 @@ interface MovieDetailsModalProps {
   onToggleWatchlist: (movieId: string) => void;
   autoPlay?: boolean;
   onPlayMovie?: (movie: Movie, episodeIndex?: number) => void;
+  onSearchQuery?: (query: string) => void;
 }
 
 interface MovieDetailsContentProps {
@@ -45,6 +46,7 @@ interface MovieDetailsContentProps {
   onToggleWatchlist: (movieId: string) => void;
   autoPlay?: boolean;
   onPlayMovie?: (movie: Movie, episodeIndex?: number) => void;
+  onSearchQuery?: (query: string) => void;
 }
 
 const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
@@ -55,13 +57,16 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
   onToggleWatchlist,
   autoPlay = true,
   onPlayMovie,
+  onSearchQuery,
 }) => {
-  // Autoplay trailer on entering info page whenever available
-  const [isPlayingTrailer, setIsPlayingTrailer] = useState(
-    Boolean(movie.trailerYoutubeId)
-  );
+  const isDataSaver = isDataSaverActive();
+
+  // Autoplay trailer on entering info page only if Data Saver is OFF and autoPlay is true
+  const shouldAutoPlayTrailer = !isDataSaver && autoPlay && Boolean(movie.trailerYoutubeId);
+  const [isPlayingTrailer, setIsPlayingTrailer] = useState(shouldAutoPlayTrailer);
+  const [isTrailerReady, setIsTrailerReady] = useState(false);
   const [activeMediaTab, setActiveMediaTab] = useState<'trailer' | 'fanart' | 'posters'>(
-    movie.trailerYoutubeId ? 'trailer' : 'fanart'
+    shouldAutoPlayTrailer ? 'trailer' : 'fanart'
   );
   const [contentTab, setContentTab] = useState<'overview' | 'reviews' | 'episodes'>('overview');
   const [selectedFanartIndex, setSelectedFanartIndex] = useState(0);
@@ -93,16 +98,30 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Ensure trailer auto-plays when movie or trailer ID changes
+  // Delay mounting heavy YouTube iframe until the 300ms entrance animation settles cleanly (prevents frame drops)
+  // When Data Saver is ON, trailer is NOT mounted until the user explicitly clicks the play button
   useEffect(() => {
-    if (movie.trailerYoutubeId) {
+    if (isDataSaver || !autoPlay) {
+      setIsTrailerReady(false);
+      return;
+    }
+    setIsTrailerReady(false);
+    const timer = setTimeout(() => {
+      setIsTrailerReady(true);
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [movie.id, isDataSaver, autoPlay]);
+
+  // Ensure media tab responds to movie changes
+  useEffect(() => {
+    if (!isDataSaver && autoPlay && movie.trailerYoutubeId) {
       setIsPlayingTrailer(true);
       setActiveMediaTab('trailer');
     } else {
       setIsPlayingTrailer(false);
       setActiveMediaTab('fanart');
     }
-  }, [movie.id, movie.trailerYoutubeId]);
+  }, [movie.id, movie.trailerYoutubeId, isDataSaver, autoPlay]);
 
   // Lock background scroll cleanly with reference counting
   useEffect(() => {
@@ -137,34 +156,31 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
 
   const hasOrigin = Boolean(
     expansionOrigin &&
-    typeof expansionOrigin.width === 'number' &&
-    expansionOrigin.width > 0 &&
-    typeof expansionOrigin.height === 'number' &&
-    expansionOrigin.height > 0
+    typeof expansionOrigin.x === 'number' &&
+    typeof expansionOrigin.y === 'number'
   );
 
-  const originLeft = hasOrigin
-    ? (expansionOrigin!.left ?? (expansionOrigin!.x - expansionOrigin!.width / 2))
-    : (targetLeft + targetWidth * 0.15);
+  // Target center of modal in viewport
+  const targetCenterX = targetLeft + targetWidth / 2;
+  const targetCenterY = targetTop + targetHeight / 2;
 
-  const originTop = hasOrigin
-    ? (expansionOrigin!.top ?? (expansionOrigin!.y - expansionOrigin!.height / 2))
-    : (targetTop + targetHeight * 0.15);
+  // Origin center of tapped item
+  const originCenterX = hasOrigin ? expansionOrigin!.x : targetCenterX;
+  const originCenterY = hasOrigin ? expansionOrigin!.y : targetCenterY;
 
-  const originWidth = hasOrigin ? expansionOrigin!.width : (targetWidth * 0.7);
-  const originHeight = hasOrigin ? expansionOrigin!.height : (targetHeight * 0.7);
+  // Subtle directional offset (capped to prevent erratic leaps, giving the organic impression of expanding from the touch origin)
+  const nudgeX = Math.max(-28, Math.min(28, (originCenterX - targetCenterX) * 0.1));
+  const nudgeY = Math.max(-24, Math.min(24, (originCenterY - targetCenterY) * 0.1));
 
-  // High-performance compositor transform deltas (zero layout reflows)
-  const deltaX = originLeft - targetLeft;
-  const deltaY = originTop - targetTop;
-  const scaleX = originWidth / targetWidth;
-  const scaleY = originHeight / targetHeight;
+  // Exact 300ms cubic-bezier(0.25, 0.1, 0.25, 1) Compositor Scale Animation (Zero Layout Reflows)
+  const compositorEnterTransition = {
+    duration: 0.30,
+    ease: [0.25, 0.1, 0.25, 1],
+  };
 
-  const springTransition = {
-    type: 'spring' as const,
-    stiffness: 320,
-    damping: 32,
-    mass: 0.8,
+  const compositorExitTransition = {
+    duration: 0.25,
+    ease: [0.25, 0.1, 0.25, 1],
   };
 
   const hasEpisodes = Boolean(movie.episodes && movie.episodes.length > 0);
@@ -176,8 +192,9 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
       ...(movie.backdrops || []),
       ...(movie.fanart || []),
     ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
-    return raw.map((url) => getBackdropUrl(url, 'original', movie.posterUrl));
-  }, [movie.backdropUrl, movie.backdrops, movie.fanart, movie.posterUrl]);
+    const size = isDataSaver ? 'w780' : 'w780';
+    return raw.map((url) => getBackdropUrl(url, size, movie.posterUrl));
+  }, [movie.backdropUrl, movie.backdrops, movie.fanart, movie.posterUrl, isDataSaver]);
 
   // 9:16 Portrait Posters
   const posterImages: string[] = useMemo(() => {
@@ -185,12 +202,16 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
       movie.posterUrl,
       ...(movie.posters || []),
     ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
-    return raw.map((url) => getPosterUrl(url, 'original', movie.backdropUrl));
-  }, [movie.posterUrl, movie.posters, movie.backdropUrl]);
+    const size = isDataSaver ? 'w185' : 'w342';
+    return raw.map((url) => getPosterUrl(url, size, movie.backdropUrl));
+  }, [movie.posterUrl, movie.posters, movie.backdropUrl, isDataSaver]);
 
-  // Share functionality with refra.netlify.app URL and proper tags
+  // Removed expensive new Image() loop that downloaded dozens of heavy assets on every modal open
+
+  // Share functionality with dynamic origin URL and cinema tags
   const handleShare = async () => {
-    const shareUrl = `https://refra.netlify.app/?movie=${encodeURIComponent(movie.id)}&title=${encodeURIComponent(movie.title)}`;
+    const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://refra.netlify.app';
+    const shareUrl = `${origin}/?movie=${encodeURIComponent(movie.id)}&title=${encodeURIComponent(movie.title)}`;
     const genreTag = (movie.genres?.[0] || 'Cinema').replace(/[^a-zA-Z0-9]/g, '');
     const shareData = {
       title: `${movie.title} (${movie.releaseYear}) • Refra Cinema`,
@@ -263,87 +284,65 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none">
-      {/* Backdrop Dim Scrim with instant tap-outside dismissal + atmospheric ambient movie blur */}
+      {/* Backdrop Dim Scrim with instant tap-outside dismissal - pure GPU compositor opacity fade */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
+        transition={compositorEnterTransition}
         onClick={onClose}
-        className="fixed inset-0 cursor-pointer pointer-events-auto overflow-hidden bg-black/60 backdrop-blur-2xl"
-      >
-        <img
-          src={getBackdropUrl(movie.backdropUrl, 'w1280', movie.posterUrl)}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover filter blur-3xl scale-125 opacity-45 saturate-150 brightness-75 pointer-events-none"
-        />
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-xl pointer-events-none" />
-      </motion.div>
+        style={{ willChange: 'opacity' }}
+        className="fixed inset-0 cursor-pointer pointer-events-auto bg-black/75 backdrop-blur-sm"
+      />
 
-      {/* The Poster Card Expanding from its exact origin into the full info container using compositor transforms */}
+      {/* The Modal Container Expanding with pure GPU Compositor Scale (Zero Reflow, Zero Jitter) */}
       <motion.div
         initial={{
-          x: deltaX,
-          y: deltaY,
-          scaleX: scaleX,
-          scaleY: scaleY,
-          borderRadius: 16,
-          opacity: 1,
+          opacity: 0,
+          scale: 0.90,
+          x: isMobile ? 0 : nudgeX,
+          y: isMobile ? 36 : (nudgeY || 12),
         }}
         animate={{
+          opacity: 1,
+          scale: 1,
           x: 0,
           y: 0,
-          scaleX: 1,
-          scaleY: 1,
-          borderRadius: targetRadius,
-          opacity: 1,
         }}
         exit={{
-          x: deltaX,
-          y: deltaY,
-          scaleX: scaleX,
-          scaleY: scaleY,
-          borderRadius: 16,
           opacity: 0,
-          transition: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
+          scale: 0.95,
+          y: isMobile ? 24 : 10,
+          transition: compositorExitTransition,
         }}
-        transition={springTransition}
+        transition={compositorEnterTransition}
         style={{
           position: 'fixed',
           top: targetTop,
           left: targetLeft,
           width: targetWidth,
           height: targetHeight,
-          transformOrigin: '0 0',
+          borderRadius: targetRadius,
+          transformOrigin: 'center center',
+          willChange: 'transform, opacity',
+          contain: 'layout paint',
         }}
-        className="z-50 overflow-hidden shadow-2xl flex flex-col pointer-events-auto bg-[#0a0c10]/80 backdrop-blur-3xl border border-white/10 gpu-layer"
+        className="z-50 overflow-hidden shadow-2xl flex flex-col pointer-events-auto bg-[#0a0c10]/95 border border-white/10 gpu-layer compositor-card"
       >
         {/* The Movie Poster / Backdrop Ambient Wallpaper */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-          <motion.img
+          <img
             src={getBackdropUrl(movie.backdropUrl, 'w1280') || getPosterUrl(movie.posterUrl, 'w780')}
             alt=""
             referrerPolicy="no-referrer"
-            initial={{
-              filter: 'blur(0px) brightness(1)',
-              opacity: 0.8,
-            }}
-            animate={{
-              filter: 'blur(40px) saturate(160%) brightness(0.7)',
-              opacity: 0.65,
-            }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="w-full h-full object-cover scale-110"
+            style={{ filter: 'blur(24px) saturate(130%) brightness(0.65)' }}
+            className="w-full h-full object-cover scale-105 opacity-60 pointer-events-none"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#0a0c10]/95 via-[#0a0c10]/60 to-[#0a0c10]/25" />
         </div>
 
-        {/* Content Layer: reveals smoothly as the poster completes its enlargement and blur */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, delay: 0.04 }}
+        {/* Content Layer: reveals crisp and instant with zero nested delay */}
+        <div
           className="relative z-10 flex flex-col h-full min-h-0 overflow-hidden"
           onWheel={handleWheel}
         >
@@ -384,16 +383,41 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
             ref={scrollContainerRef}
             className="overflow-y-auto desktop-scrollbar overscroll-contain flex-1 min-h-0 pb-12"
           >
-            {/* Cinematic Stage: Trailer (Autoplay) OR 16:9 Fanart OR 9:16 Posters */}
+            {/* Cinematic Stage: Trailer (Autoplay after 320ms entrance) OR 16:9 Fanart OR 9:16 Posters */}
             {activeMediaTab === 'trailer' && movie.trailerYoutubeId ? (
               <div className="relative mx-4 mt-1 aspect-[16/9] rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/10 shrink-0">
-                <iframe
-                  src={`https://www.youtube.com/embed/${movie.trailerYoutubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
-                  title={`${movie.title} Official Trailer`}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  className="w-full h-full border-0"
-                />
+                {isTrailerReady ? (
+                  <iframe
+                    src={`https://www.youtube.com/embed/${movie.trailerYoutubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+                    title={`${movie.title} Official Trailer`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="w-full h-full border-0 animate-fade-in"
+                  />
+                ) : (
+                  <div
+                    onClick={() => setIsTrailerReady(true)}
+                    className="w-full h-full relative flex items-center justify-center bg-black/80 cursor-pointer group"
+                    title="Click to play trailer"
+                  >
+                    <img
+                      src={getBackdropUrl(movie.backdropUrl, 'w780') || getPosterUrl(movie.posterUrl, 'w342')}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover opacity-60 group-hover:opacity-75 transition-opacity"
+                    />
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
+                      <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 text-white shadow-xl group-hover:scale-105 transition-transform">
+                        <Play className="w-5 h-5 fill-white text-white ml-0.5" />
+                      </div>
+                      {isDataSaver && (
+                        <span className="text-[11px] font-medium text-white/70 bg-black/60 px-2.5 py-0.5 rounded-full border border-white/10">
+                          Data Saver Active • Click to load trailer
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : activeMediaTab === 'posters' ? (
               /* 9:16 Portrait Posters Stage */
@@ -406,14 +430,19 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                   className="relative aspect-[9/16] w-52 sm:w-60 rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/15 cursor-pointer group shrink-0"
                   title="Tap to open full screen and download"
                 >
-                  <img
-                    src={posterImages[selectedPosterIndex] || movie.posterUrl}
-                    alt={`${movie.title} Official Poster`}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-103"
-                  />
+                  {posterImages.map((imgUrl, idx) => (
+                    <img
+                      key={imgUrl}
+                      src={imgUrl}
+                      alt={`${movie.title} Official Poster ${idx + 1}`}
+                      referrerPolicy="no-referrer"
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-103 ${
+                        selectedPosterIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                      }`}
+                    />
+                  ))}
                   {/* Subtle Overlay Actions (Fullscreen & Download) */}
-                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -447,17 +476,22 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
             ) : (
               /* 16:9 Landscape Fanart & Stills Stage */
               <div className="relative mx-4 mt-1 aspect-[16/9] rounded-2xl bg-black/60 overflow-hidden shadow-2xl border border-white/10 shrink-0 group">
-                <img
-                  src={fanartImages[selectedFanartIndex] || movie.backdropUrl}
-                  alt={`${movie.title} Fanart Still`}
-                  referrerPolicy="no-referrer"
-                  onClick={() => {
-                    setLightboxMode('fanart');
-                    setIsLightboxOpen(true);
-                  }}
-                  className="w-full h-full object-cover cursor-pointer transition-transform duration-300 group-hover:scale-102"
-                />
-                <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                {fanartImages.map((imgUrl, idx) => (
+                  <img
+                    key={imgUrl}
+                    src={imgUrl}
+                    alt={`${movie.title} Fanart Still ${idx + 1}`}
+                    referrerPolicy="no-referrer"
+                    onClick={() => {
+                      setLightboxMode('fanart');
+                      setIsLightboxOpen(true);
+                    }}
+                    className={`absolute inset-0 w-full h-full object-cover cursor-pointer transition-opacity duration-300 group-hover:scale-102 ${
+                      selectedFanartIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                    }`}
+                  />
+                ))}
+                <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     onClick={(e) => {
@@ -655,9 +689,32 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     </span>
                   </div>
 
-                  <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md">
-                    {movie.title}
-                  </h3>
+                  {movie.logoUrl ? (
+                    <div className="flex items-center max-h-12 sm:max-h-14 py-0.5">
+                      <img
+                        src={movie.logoUrl}
+                        alt={movie.title}
+                        referrerPolicy="no-referrer"
+                        className="max-h-10 sm:max-h-12 max-w-[85%] object-contain object-left drop-shadow-[0_4px_16px_rgba(0,0,0,0.85)]"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                          const fb = document.getElementById(`modal-fallback-title-${movie.id}`);
+                          if (fb) fb.style.display = 'block';
+                        }}
+                      />
+                      <h3
+                        id={`modal-fallback-title-${movie.id}`}
+                        style={{ display: 'none' }}
+                        className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md"
+                      >
+                        {movie.title}
+                      </h3>
+                    </div>
+                  ) : (
+                    <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md">
+                      {movie.title}
+                    </h3>
+                  )}
 
                   {movie.japaneseTitle && (
                     <div className="text-xs text-neutral-300 font-medium">
@@ -672,6 +729,21 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                   )}
 
                   <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
+                    {movie.genres && movie.genres.slice(0, 3).map((genre) => (
+                      <button
+                        key={genre}
+                        type="button"
+                        onClick={() => {
+                          if (onSearchQuery) {
+                            onClose();
+                            onSearchQuery(genre);
+                          }
+                        }}
+                        className="text-[10px] text-neutral-300 hover:text-white px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/10 font-medium backdrop-blur-md transition-colors cursor-pointer"
+                      >
+                        {genre}
+                      </button>
+                    ))}
                     {movie.studios && movie.studios.length > 0 && (
                       <span className="text-[10px] text-neutral-200 px-2 py-0.5 rounded-md bg-white/10 border border-white/10 font-semibold backdrop-blur-md">
                         {movie.studios[0]}
@@ -749,14 +821,11 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
 
               {copiedShare && (
                 <div className="text-center py-1 text-xs text-neutral-300 font-medium">
-                  Refra link copied to clipboard (refra.netlify.app)
+                  Refra link copied to clipboard!
                 </div>
               )}
 
-              {/* Single Download Button that Expands to Show Options */}
-              <div className="pt-0.5">
-                <DownloadExpander movie={movie} />
-              </div>
+
 
               {/* Content Tabs (Overview, Reviews, Episodes) */}
               <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/35 border border-white/10 backdrop-blur-md">
@@ -853,7 +922,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                             className="shrink-0 flex items-center justify-center cursor-pointer transition-transform hover:scale-105"
                           >
                             <img
-                              src={wp.logoUrl}
+                              src={toWebpUrl(wp.logoUrl, 100)}
                               alt={wp.name}
                               referrerPolicy="no-referrer"
                               className="w-12 h-12 rounded-2xl object-cover shadow-lg"
@@ -872,18 +941,25 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                           <Users className="w-3.5 h-3.5 text-neutral-300" />
                           <span>Top Cast</span>
                         </div>
-                        <span className="text-[10px] text-neutral-400">Credits</span>
+                        <span className="text-[10px] text-neutral-400">Tap to search films</span>
                       </div>
                       <div className="flex gap-2.5 overflow-x-auto hide-scrollbar pt-1">
                         {movie.castDetailed.slice(0, 10).map((actor, idx) => (
-                          <div
+                          <button
                             key={idx}
-                            className="flex flex-col items-center text-center w-18 shrink-0 space-y-1.5"
+                            type="button"
+                            onClick={() => {
+                              if (onSearchQuery) {
+                                onClose();
+                                onSearchQuery(actor.name);
+                              }
+                            }}
+                            className="flex flex-col items-center text-center w-18 shrink-0 space-y-1.5 group cursor-pointer"
                           >
-                            <div className="w-13 h-13 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0">
+                            <div className="w-13 h-13 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0 group-hover:scale-105 transition-transform">
                               {actor.profileUrl ? (
                                 <img
-                                  src={actor.profileUrl}
+                                  src={toWebpUrl(actor.profileUrl, 120)}
                                   alt={actor.name}
                                   referrerPolicy="no-referrer"
                                   className="w-full h-full object-cover"
@@ -895,12 +971,12 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                               )}
                             </div>
                             <div className="w-full">
-                              <p className="text-[11px] font-medium text-white truncate">{actor.name}</p>
+                              <p className="text-[11px] font-medium text-white truncate group-hover:text-neutral-200">{actor.name}</p>
                               {actor.character && (
                                 <p className="text-[9px] text-neutral-400 truncate">{actor.character}</p>
                               )}
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -911,24 +987,42 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                         <span className="text-xs text-neutral-400">Cast:</span>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {movie.cast.map((actor) => (
-                            <span
+                            <button
                               key={actor}
-                              className="text-xs font-light text-neutral-200 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/5 backdrop-blur-sm"
-                            >
-                              {actor}
-                            </span>
-                          ))}
-                        </div>
+                              type="button"
+                              onClick={() => {
+                                if (onSearchQuery) {
+                                onClose();
+                                onSearchQuery(actor);
+                              }
+                            }}
+                            className="text-xs font-light text-neutral-200 hover:text-white px-2.5 py-0.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/5 backdrop-blur-sm cursor-pointer transition-colors"
+                          >
+                            {actor}
+                          </button>
+                        ))}
                       </div>
-                    )
-                  )}
-
-                  {/* Director & Production */}
-                  <div className="p-4 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-neutral-300">
-                      <span className="text-neutral-400">Director:</span>
-                      <span className="font-semibold text-white">{movie.director}</span>
                     </div>
+                  )
+                )}
+
+                {/* Director & Production */}
+                <div className="p-4 rounded-2xl bg-black/30 border border-white/10 backdrop-blur-md space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-neutral-300">
+                    <span className="text-neutral-400">Director:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onSearchQuery) {
+                          onClose();
+                          onSearchQuery(movie.director);
+                        }
+                      }}
+                      className="font-semibold text-white hover:underline cursor-pointer"
+                    >
+                      {movie.director}
+                    </button>
+                  </div>
 
                     {movie.productionCompaniesList && movie.productionCompaniesList.some((p) => p.logoUrl) && (
                       <div className="pt-2 border-t border-white/5 space-y-2">
@@ -943,7 +1037,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                                 className="px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-md"
                               >
                                 <img
-                                  src={p.logoUrl}
+                                  src={toWebpUrl(p.logoUrl, 160)}
                                   alt={p.name}
                                   className="h-9 sm:h-11 max-w-[130px] object-contain filter invert brightness-200"
                                 />
@@ -1003,7 +1097,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
               )}
             </div>
           </div>
-        </motion.div>
+        </div>
       </motion.div>
 
       {/* Artwork Lightbox Modal for 9:16 and 16:9 full resolution viewer & downloader */}

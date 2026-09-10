@@ -59,7 +59,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" style={{ contain: 'layout paint' }}>
           {watchlistMovies.map((movie) => (
             <motion.div
               key={movie.id}
@@ -67,7 +67,8 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               whileTap={{ scale: 0.96 }}
               transition={{ duration: 0.08, ease: 'easeOut' }}
-              className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer will-change-transform"
+              style={{ willChange: 'transform', contain: 'layout paint' }}
+              className="media-card-item aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer"
               onClick={(e) => onMovieClick(movie, e.currentTarget.getBoundingClientRect())}
             >
               <img
@@ -82,14 +83,14 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
               <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
 
-              {/* Remove button: liquid-glass pill */}
+              {/* Remove button: solid glass pill */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(movie.id);
                 }}
-                className="absolute top-2 right-2 p-1.5 rounded-full liquid-glass hover:bg-rose-950/80 text-white z-10 transition-colors"
+                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 hover:bg-rose-950/80 text-white z-10 transition-colors"
                 aria-label="Remove from watchlist"
               >
                 <Trash2 className="w-3.5 h-3.5 text-rose-300" />

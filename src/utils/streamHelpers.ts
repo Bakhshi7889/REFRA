@@ -187,6 +187,126 @@ export const parseStreamSpecBadges = (stream: StreamItem, maxBadges = 5): SpecBa
   return list;
 };
 
+export interface StreamAudioInfo {
+  languageText: string;
+  audioFormatText: string;
+  badgeLabel: string;
+  fullLabel: string;
+  isMultiAudio: boolean;
+  isAtmos: boolean;
+}
+
+/**
+ * Extracts comprehensive, unambiguous audio track and language details
+ * from any stream item so the user always knows with 100% certainty
+ * which Audio track and format they are getting when pressing play or download.
+ */
+export const getStreamAudioInfo = (stream?: StreamItem | null): StreamAudioInfo => {
+  if (!stream) {
+    return {
+      languageText: 'English',
+      audioFormatText: 'Original Stereo',
+      badgeLabel: 'English • Stereo',
+      fullLabel: 'English (Stereo)',
+      isMultiAudio: false,
+      isAtmos: false,
+    };
+  }
+
+  const combined = `${stream.name || ''} ${stream.specs || ''} ${stream.title || ''} ${stream.rawDescription || ''} ${(stream.badges || []).join(' ')} ${stream.audioFormat || ''}`.toLowerCase();
+
+  // Languages detection
+  const langs = stream.languages || [];
+  let langLabel = '';
+
+  const hasDualAudio = /\b(dual\s*audio|multi\s*audio|multi\s*lang)\b/i.test(combined);
+  const hasHindi = /\bhindi\b|\bhin\b/i.test(combined) || langs.some((l) => /hindi/i.test(l));
+  const hasTamil = /\btamil\b|\btam\b/i.test(combined) || langs.some((l) => /tamil/i.test(l));
+  const hasTelugu = /\btelugu\b|\btel\b/i.test(combined) || langs.some((l) => /telugu/i.test(l));
+  const hasSpanish = /\b(spanish|español|esp)\b/i.test(combined) || langs.some((l) => /spanish|español/i.test(l));
+  const hasFrench = /\b(french|français|fra)\b/i.test(combined) || langs.some((l) => /french|français/i.test(l));
+  const hasGerman = /\b(german|deutsch|ger)\b/i.test(combined) || langs.some((l) => /german|deutsch/i.test(l));
+  const hasJapanese = /\b(japanese|anime|jpn)\b/i.test(combined) || langs.some((l) => /japanese/i.test(l));
+  const hasKorean = /\b(korean|kor)\b/i.test(combined) || langs.some((l) => /korean/i.test(l));
+  const hasItalian = /\b(italian|ita)\b/i.test(combined) || langs.some((l) => /italian/i.test(l));
+
+  if (hasDualAudio) {
+    if (hasHindi) langLabel = 'Hindi + Eng';
+    else if (hasTamil) langLabel = 'Tamil + Eng';
+    else if (hasTelugu) langLabel = 'Telugu + Eng';
+    else if (hasSpanish) langLabel = 'Spanish + Eng';
+    else if (hasFrench) langLabel = 'French + Eng';
+    else langLabel = 'Dual Audio';
+  } else if (hasHindi) {
+    langLabel = 'Hindi';
+  } else if (hasTamil) {
+    langLabel = 'Tamil';
+  } else if (hasTelugu) {
+    langLabel = 'Telugu';
+  } else if (hasJapanese) {
+    langLabel = 'Japanese';
+  } else if (hasSpanish) {
+    langLabel = 'Spanish';
+  } else if (hasFrench) {
+    langLabel = 'French';
+  } else if (hasGerman) {
+    langLabel = 'German';
+  } else if (hasKorean) {
+    langLabel = 'Korean';
+  } else if (hasItalian) {
+    langLabel = 'Italian';
+  } else if (langs.length > 0) {
+    langLabel = langs[0];
+  } else {
+    langLabel = 'English';
+  }
+
+  // Format detection
+  const isAtmos = /atmos/i.test(combined);
+  const isTrueHD = /truehd/i.test(combined);
+  const isDtsHd = /dts-?hd/i.test(combined);
+  const isDts = /dts/i.test(combined);
+  const isDigitalPlus = /digital\+|ddp|eac3|e-ac-3/i.test(combined);
+  const isAC3 = /ac3|dd5\.1|dolby digital(?![\+])/i.test(combined);
+  const is71 = /7\.1/i.test(combined);
+  const is51 = /5\.1/i.test(combined);
+  const isAAC = /aac/i.test(combined);
+
+  let formatLabel = '';
+  if (isAtmos) {
+    formatLabel = isTrueHD ? 'TrueHD Atmos 7.1' : is71 ? 'Atmos 7.1' : is51 ? 'DDP 5.1 Atmos' : 'Dolby Atmos';
+  } else if (isTrueHD) {
+    formatLabel = is71 ? 'TrueHD 7.1' : 'TrueHD 5.1';
+  } else if (isDtsHd) {
+    formatLabel = is71 ? 'DTS-HD 7.1' : 'DTS-HD 5.1';
+  } else if (isDts) {
+    formatLabel = is71 ? 'DTS 7.1' : 'DTS 5.1';
+  } else if (isDigitalPlus) {
+    formatLabel = is71 ? 'Digital+ 7.1' : is51 ? 'Digital+ 5.1' : 'Digital+';
+  } else if (isAC3) {
+    formatLabel = 'Dolby 5.1';
+  } else if (is71) {
+    formatLabel = 'Surround 7.1';
+  } else if (is51) {
+    formatLabel = 'Surround 5.1';
+  } else if (isAAC) {
+    formatLabel = 'AAC 2.0';
+  } else {
+    formatLabel = 'Original Stereo';
+  }
+
+  const badgeLabel = `${langLabel} • ${formatLabel}`;
+
+  return {
+    languageText: langLabel,
+    audioFormatText: formatLabel,
+    badgeLabel,
+    fullLabel: `${langLabel} (${formatLabel})`,
+    isMultiAudio: hasDualAudio,
+    isAtmos,
+  };
+};
+
 export interface StreamTag {
   id: string;
   label: string;
@@ -498,7 +618,7 @@ export function generateFallbackStreams(movie: Movie, episodeIndex = 0): StreamI
     },
     {
       server: 'HdHub',
-      name: 'HdHub 4K • Enhanced Bitrate Mirror',
+      name: 'HdHub 4K • Enhanced Bitrate Node',
       quality: '4K',
       sourceHost: 'HdHub • Singapore Node',
       specs: '4K • MKV • WEB-DL • HDR10 • HEVC • ~28.0 Mbps',
@@ -558,7 +678,7 @@ export function generateFallbackStreams(movie: Movie, episodeIndex = 0): StreamI
     },
     {
       server: 'Kort',
-      name: 'Kort 4K • IPTV WebStreamr Mirror',
+      name: 'Kort 4K • IPTV WebStreamr Node',
       quality: '4K',
       sourceHost: 'Kort • Frankfurt Cloud',
       specs: '4K • MP4 • WEB-DL • HDR10 • HEVC • Master Stereo • ~18.5 Mbps',
@@ -610,6 +730,8 @@ export function generateFallbackStreams(movie: Movie, episodeIndex = 0): StreamI
     badges: s.badges,
     languages: s.languages,
     url: s.url,
+    directDownloadUrl: s.url,
+    rawDirectUrl: s.url,
   }));
 }
 
@@ -801,8 +923,7 @@ export function getCuratedDownloadTiers(streams: StreamItem[], movie: Movie): Cu
 
       const cleanTmdb = movie.tmdbId || '1084199';
       const fallbackUrl = `https://vidlink.pro/movie/${cleanTmdb}`;
-      const fileName = `${safeTitle} (${year}) [${res}].mp4`;
-      const directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(fallbackUrl)}&download=1&filename=${encodeURIComponent(fileName)}`;
+      const directDownloadUrl = fallbackUrl;
 
       is10Bit = tierConfig.is10Bit;
       sizeGb = tierConfig.sizeGb;
@@ -830,9 +951,8 @@ export function getCuratedDownloadTiers(streams: StreamItem[], movie: Movie): Cu
 
     // Ensure directDownloadUrl is set cleanly so downloading works without redirects
     if (!bestStream.directDownloadUrl) {
-      const fileName = `${safeTitle} (${year}) [${res}].mp4`;
       const sourceUrl = bestStream.rawDirectUrl || bestStream.url || '';
-      bestStream.directDownloadUrl = `/api/stream/proxy?url=${encodeURIComponent(sourceUrl)}&download=1&filename=${encodeURIComponent(fileName)}`;
+      bestStream.directDownloadUrl = sourceUrl;
     }
 
     return {

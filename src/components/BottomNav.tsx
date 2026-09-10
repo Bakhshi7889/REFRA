@@ -27,20 +27,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         return (
           <motion.div
             animate={{
-              y: isActive ? [-4, 1, 0] : 0,
-              scale: isActive ? [0.92, 1.15, 1] : 1,
+              scale: isActive ? [1, 1.15, 1] : 1,
             }}
             transition={{
-              duration: 0.4,
-              ease: [0.34, 1.56, 0.64, 1],
+              duration: 0.3,
+              ease: [0.25, 0.1, 0.25, 1],
             }}
             className="relative flex items-center justify-center"
           >
             <Home
-              className={`w-4 h-4 transition-all duration-300 ${
+              className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -50,20 +49,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         return (
           <motion.div
             animate={{
-              rotate: isActive ? [0, -35, 180, 145, 0] : 0,
-              scale: isActive ? [1, 1.18, 1] : 1,
+              rotate: isActive ? [0, 45, 0] : 0,
+              scale: isActive ? [1, 1.15, 1] : 1,
             }}
             transition={{
-              duration: 0.6,
-              ease: [0.34, 1.3, 0.64, 1],
+              duration: 0.3,
+              ease: [0.25, 0.1, 0.25, 1],
             }}
             className="relative flex items-center justify-center origin-center"
           >
             <Compass
-              className={`w-4 h-4 transition-all duration-300 ${
+              className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -73,22 +72,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         return (
           <motion.div
             animate={{
-              rotateY: isActive ? [0, 180, 360] : 0,
-              scale: isActive ? [1, 1.25, 1] : 1,
-              rotate: isActive ? [0, -18, 12, 0] : 0,
+              scale: isActive ? [1, 1.15, 1] : 1,
             }}
             transition={{
-              duration: 0.55,
-              ease: [0.25, 1, 0.5, 1],
+              duration: 0.3,
+              ease: [0.25, 0.1, 0.25, 1],
             }}
-            style={{ perspective: 400 }}
             className="relative flex items-center justify-center"
           >
             <Search
-              className={`w-4 h-4 transition-all duration-300 ${
+              className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -98,21 +94,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         return (
           <motion.div
             animate={{
-              y: isActive ? [-15, 2, 0] : 0,
-              opacity: isActive ? [0.3, 1, 1] : 1,
-              scaleY: isActive ? [0.65, 1.18, 1] : 1,
+              scale: isActive ? [1, 1.18, 1] : 1,
             }}
             transition={{
-              duration: 0.45,
-              ease: [0.34, 1.56, 0.64, 1],
+              duration: 0.3,
+              ease: [0.25, 0.1, 0.25, 1],
             }}
             className="relative flex items-center justify-center overflow-visible"
           >
             <Bookmark
-              className={`w-4 h-4 transition-all duration-300 ${
+              className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white fill-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'text-white fill-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -123,20 +117,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         return (
           <motion.div
             animate={{
-              rotate: isActive ? [0, -14, 14, -6, 0] : 0,
-              scale: isActive ? [1, 1.2, 1] : 1,
+              scale: isActive ? [1, 1.15, 1] : 1,
             }}
             transition={{
-              duration: 0.45,
-              ease: [0.25, 1, 0.5, 1],
+              duration: 0.3,
+              ease: [0.25, 0.1, 0.25, 1],
             }}
             className="relative flex items-center justify-center"
           >
             <User
-              className={`w-4 h-4 transition-all duration-300 ${
+              className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.85)]'
-                  : 'text-neutral-400 hover:text-neutral-200'
+                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -145,10 +138,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 p-3 pointer-events-none flex justify-center safe-bottom">
+    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-5 pt-2 sm:pb-6 pointer-events-none flex justify-center safe-bottom">
       <nav
         aria-label="Bottom Navigation"
-        className="pointer-events-auto liquid-glass rounded-full px-2 py-1.5 flex items-center justify-between gap-1 shadow-2xl max-w-sm w-full"
+        className="pointer-events-auto liquid-glass liquid-glass-pill rounded-full px-2 py-1.5 flex items-center justify-between gap-1 max-w-sm w-full relative bg-[#101218]/65 border-white/12 shadow-[0_12px_36px_rgba(0,0,0,0.5)]"
       >
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
@@ -157,23 +150,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <motion.button
               key={tab.id}
               type="button"
-              whileTap={{ scale: 0.96 }}
+              whileTap={{ scale: 0.94 }}
               onClick={() => onTabChange(tab.id)}
-              className="relative flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-full text-xs transition-colors min-h-[44px] cursor-pointer"
+              className="relative flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-full text-xs transition-colors min-h-[44px] cursor-pointer overflow-hidden"
               aria-label={tab.label}
             >
               {isActive && (
                 <motion.div
-                  layoutId="activeNavTab"
-                  className="absolute inset-0 bg-[#262b37] rounded-full shadow-inner"
-                  transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                  layoutId="activeBottomTabIndicator"
+                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  style={{ willChange: 'transform, opacity' }}
+                  className="absolute inset-0.5 rounded-full bg-neutral-900/40 border border-white/15 shadow-[inset_0_1.2px_1px_rgba(255,255,255,0.22),inset_0_-1px_1px_rgba(0,0,0,0.35),0_2px_8px_rgba(0,0,0,0.35)] pointer-events-none"
                 />
               )}
 
               <div className="relative z-10 flex flex-col items-center gap-0.5">
                 {renderNavIcon(tab.id, isActive)}
                 <span
-                  className={`text-[10px] tracking-tight font-medium transition-colors duration-200 ${
+                  className={`text-[10px] tracking-tight font-medium transition-colors duration-150 ${
                     isActive ? 'text-white font-semibold' : 'text-neutral-400'
                   }`}
                 >

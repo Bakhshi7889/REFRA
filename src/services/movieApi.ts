@@ -37,8 +37,46 @@ export async function checkServerAvailable(): Promise<boolean> {
 
 // ---------------- DIRECT CLIENT-SIDE FORMATTERS ----------------
 
-function formatTmdbMovie(m: any, detailed = false): Movie {
+const TMDB_GENRE_NAMES: Record<number, string> = {
+  28: 'Action',
+  12: 'Adventure',
+  16: 'Animation',
+  35: 'Comedy',
+  80: 'Crime',
+  99: 'Documentary',
+  18: 'Drama',
+  10751: 'Family',
+  14: 'Fantasy',
+  36: 'History',
+  27: 'Horror',
+  10402: 'Music',
+  9648: 'Mystery',
+  10749: 'Romance',
+  878: 'Sci-Fi',
+  10770: 'TV Movie',
+  53: 'Thriller',
+  10752: 'War',
+  37: 'Western',
+  10759: 'Action & Adventure',
+  10762: 'Kids',
+  10763: 'News',
+  10764: 'Reality',
+  10765: 'Sci-Fi & Fantasy',
+  10766: 'Soap',
+  10767: 'Talk',
+  10768: 'War & Politics',
+};
+
+function formatTmdbMovie(m: any, defaultType?: 'movie' | 'tv' | boolean): Movie {
   const tmdbId = m.id;
+  const isTv = defaultType === 'tv' || Boolean(
+    m.first_air_date ||
+    m.name ||
+    m.original_name ||
+    m.number_of_seasons ||
+    m.media_type === 'tv'
+  );
+
   const backdrops: string[] = [];
   if (m.backdrop_path) {
     backdrops.push(`https://image.tmdb.org/t/p/original${m.backdrop_path}`);
@@ -70,19 +108,38 @@ function formatTmdbMovie(m: any, detailed = false): Movie {
   }
 
   const director =
-    m.credits?.crew?.find((c: any) => c.job === 'Director')?.name || 'Cinema Visionary';
+    m.created_by?.[0]?.name ||
+    m.credits?.crew?.find((c: any) => c.job === 'Director' || c.job === 'Creator' || c.job === 'Executive Producer')?.name ||
+    (isTv ? 'Original Series' : 'Director Vision');
+
   const cast =
     m.credits?.cast?.slice(0, 4).map((c: any) => c.name) || ['Ensemble Cast'];
-  const genres =
-    m.genres?.map((g: any) => g.name) || ['Cinema'];
 
-  const duration = m.runtime
-    ? `${Math.floor(m.runtime / 60)}h ${m.runtime % 60}m`
-    : '2h 10m';
+  let genres: string[] = [];
+  if (Array.isArray(m.genres) && m.genres.length > 0) {
+    genres = m.genres.map((g: any) => (typeof g === 'string' ? g : g.name)).filter(Boolean);
+  } else if (Array.isArray(m.genre_ids) && m.genre_ids.length > 0) {
+    genres = m.genre_ids.map((id: number) => TMDB_GENRE_NAMES[id]).filter(Boolean);
+  }
+  if (genres.length === 0) {
+    genres = isTv ? ['Series', 'Drama'] : ['Cinema', 'Drama'];
+  }
 
-  const releaseYear = m.release_date
-    ? new Date(m.release_date).getFullYear()
-    : 2024;
+  let duration = '2h 10m';
+  if (m.runtime) {
+    duration = `${Math.floor(m.runtime / 60)}h ${m.runtime % 60}m`;
+  } else if (m.number_of_seasons) {
+    duration = `${m.number_of_seasons} Season${m.number_of_seasons > 1 ? 's' : ''}`;
+  } else if (m.episode_run_time && m.episode_run_time.length > 0) {
+    duration = `${m.episode_run_time[0]}m / ep`;
+  } else if (isTv) {
+    duration = 'Series';
+  }
+
+  const dateStr = m.release_date || m.first_air_date;
+  const releaseYear = dateStr
+    ? new Date(dateStr).getFullYear()
+    : (isTv ? 2023 : 2024);
 
   const score = m.vote_average ? m.vote_average.toFixed(1) : '8.4';
   const posterUrl = m.poster_path
@@ -95,16 +152,37 @@ function formatTmdbMovie(m: any, detailed = false): Movie {
   const resolutions = ['4K HDR', '4K UHD', 'IMAX Enhanced'] as const;
   const resolution = resolutions[tmdbId % resolutions.length];
 
+  const title =
+    m.title ||
+    m.name ||
+    m.original_title ||
+    m.original_name ||
+    (isTv ? 'Featured Series' : 'Featured Movie');
+
+  const tagline = m.tagline || (isTv ? 'Acclaimed Streaming Series' : 'Feature Film');
+  const synopsis = m.overview || (isTv ? 'Original television series streaming in high definition.' : 'A cinematic voyage crafted for large screens.');
+
+  let logoUrl: string | undefined = m.logoUrl;
+  if (!logoUrl && m.images?.logos && m.images.logos.length > 0) {
+    const enLogo =
+      m.images.logos.find((l: any) => l.iso_639_1 === 'en') ||
+      m.images.logos.find((l: any) => !l.iso_639_1) ||
+      m.images.logos[0];
+    if (enLogo?.file_path) {
+      logoUrl = `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
+    }
+  }
+
   return {
-    id: `tmdb_${tmdbId}`,
+    id: isTv ? `tmdb_tv_${tmdbId}` : `tmdb_${tmdbId}`,
     tmdbId,
     imdbId: m.imdb_id,
-    title: m.title || 'Cinema Masterwork',
-    tagline: m.tagline || 'Pure visual immersion',
-    synopsis: m.overview || 'A cinematic voyage crafted for large screens.',
+    title,
+    tagline,
+    synopsis,
     releaseYear,
     score,
-    certification: 'PG-13',
+    certification: isTv ? 'TV-14' : 'PG-13',
     duration,
     genres,
     director,
@@ -113,6 +191,7 @@ function formatTmdbMovie(m: any, detailed = false): Movie {
     posters: posters.length > 0 ? posters : [posterUrl],
     backdropUrl: primaryBackdrop,
     backdrops: backdrops.length > 0 ? backdrops : [primaryBackdrop],
+    logoUrl,
     trailerYoutubeId,
     trailerUrl: trailerYoutubeId ? `https://www.youtube.com/watch?v=${trailerYoutubeId}` : undefined,
     resolution,
@@ -120,6 +199,7 @@ function formatTmdbMovie(m: any, detailed = false): Movie {
     spotlight: m.vote_average > 7.5,
     featured: true,
     badge: m.vote_average >= 8.2 ? 'Masterpiece' : m.popularity > 100 ? 'Trending' : '4K Premiere',
+    mediaType: isTv ? 'tv' as const : 'movie' as const,
   };
 }
 
@@ -194,9 +274,31 @@ function formatAniListAnime(item: any): Movie {
 // ---------------- CLIENT-SIDE DIRECT FETCH HELPERS ----------------
 
 async function directFetchTmdbMovies(endpoint: string): Promise<Movie[]> {
-  const cacheKey = `direct_${endpoint}`;
+  const data = await directFetchTmdbRaw(endpoint);
+  const items = (data.results || []).slice(0, 15);
+  const formatted = items.map((m: any) => formatTmdbMovie(m));
+  return formatted;
+}
+
+async function directFetchTmdbRaw(endpoint: string): Promise<any> {
+  const cacheKey = `direct_raw_${endpoint}`;
   if (clientCache[cacheKey] && Date.now() - clientCache[cacheKey].timestamp < CACHE_TTL) {
     return clientCache[cacheKey].data;
+  }
+
+  // Security layer: Route via backend proxy whenever server is online to conceal secrets
+  const hasServer = await checkServerAvailable();
+  if (hasServer) {
+    try {
+      const res = await fetch(`/api/tmdb/proxy?endpoint=${encodeURIComponent(endpoint)}`);
+      if (res.ok) {
+        const data = await res.json();
+        clientCache[cacheKey] = { data, timestamp: Date.now() };
+        return data;
+      }
+    } catch {
+      // Fall through to direct fetch only if local dev or offline
+    }
   }
 
   const sep = endpoint.includes('?') ? '&' : '?';
@@ -204,10 +306,8 @@ async function directFetchTmdbMovies(endpoint: string): Promise<Movie[]> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`TMDB HTTP error ${res.status}`);
   const data = await res.json();
-  const items = (data.results || []).slice(0, 15);
-  const formatted = items.map((m: any) => formatTmdbMovie(m));
-  clientCache[cacheKey] = { data: formatted, timestamp: Date.now() };
-  return formatted;
+  clientCache[cacheKey] = { data, timestamp: Date.now() };
+  return data;
 }
 
 async function directFetchAniList(perPage = 16): Promise<Movie[]> {
@@ -289,7 +389,33 @@ export async function fetchSpotlightMovies(): Promise<Movie[]> {
 
   try {
     const directMovies = await directFetchTmdbMovies('trending/movie/week');
-    if (directMovies.length > 0) return directMovies.slice(0, 5);
+    if (directMovies.length > 0) {
+      const top5 = directMovies.slice(0, 5);
+      const enriched = await Promise.all(
+        top5.map(async (movie) => {
+          if (movie.logoUrl || !movie.tmdbId) return movie;
+          try {
+            const imgData = await directFetchTmdbRaw(`movie/${movie.tmdbId}/images?include_image_language=en,null`);
+            if (imgData?.logos && imgData.logos.length > 0) {
+              const enLogo =
+                imgData.logos.find((l: any) => l.iso_639_1 === 'en') ||
+                imgData.logos.find((l: any) => !l.iso_639_1) ||
+                imgData.logos[0];
+              if (enLogo?.file_path) {
+                return {
+                  ...movie,
+                  logoUrl: `https://image.tmdb.org/t/p/w500${enLogo.file_path}`,
+                };
+              }
+            }
+          } catch {
+            // Ignore image lookup errors
+          }
+          return movie;
+        })
+      );
+      return enriched;
+    }
   } catch (err) {
     console.warn('Direct TMDB spotlight error:', err);
   }
@@ -516,18 +642,30 @@ export async function fetchMovieDetails(id: string): Promise<Movie | null> {
     }
   }
 
-  // If TMDB ID, fetch details + videos directly from TMDB
-  if (id.startsWith('tmdb_')) {
-    const tmdbId = id.replace('tmdb_', '');
+  // If TMDB ID, fetch details + videos via secure proxy or cached raw fetcher
+  if (id.startsWith('tmdb_tv_')) {
+    const tmdbId = id.replace('tmdb_tv_', '');
     try {
-      const url = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_KEY}&append_to_response=videos,credits,images`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const raw = await res.json();
-        return formatTmdbMovie(raw, true);
+      const raw = await directFetchTmdbRaw(`tv/${tmdbId}?append_to_response=videos,credits,images`);
+      if (raw && !raw.status_code) {
+        return formatTmdbMovie(raw, 'tv');
       }
     } catch (err) {
-      console.warn('Direct TMDB movie details error:', err);
+      console.warn('TMDB TV details fetch error:', err);
+    }
+  } else if (id.startsWith('tmdb_')) {
+    const tmdbId = id.replace('tmdb_', '');
+    try {
+      let raw = await directFetchTmdbRaw(`movie/${tmdbId}?append_to_response=videos,credits,images`);
+      if (raw && !raw.status_code) {
+        return formatTmdbMovie(raw, 'movie');
+      }
+      raw = await directFetchTmdbRaw(`tv/${tmdbId}?append_to_response=videos,credits,images`);
+      if (raw && !raw.status_code) {
+        return formatTmdbMovie(raw, 'tv');
+      }
+    } catch (err) {
+      console.warn('TMDB movie details fetch error:', err);
     }
   }
 
@@ -556,16 +694,12 @@ export async function fetchReviews(
     }
   }
 
-  // Direct TMDB reviews fallback
+  // Direct TMDB reviews fallback via proxy/cached fetcher
   const tmdbId = options?.tmdbId || (mediaId.startsWith('tmdb_') ? mediaId.replace('tmdb_', '') : null);
   if (tmdbId && !isNaN(Number(tmdbId))) {
     try {
-      const res = await fetch(
-        `https://api.themoviedb.org/3/movie/${tmdbId}/reviews?api_key=${TMDB_KEY}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
+      const data = await directFetchTmdbRaw(`movie/${tmdbId}/reviews`);
+      if (data && data.results && data.results.length > 0) {
           return data.results.map((r: any) => {
             const rating = r.author_details?.rating || 8;
             return {
@@ -597,7 +731,6 @@ export async function fetchReviews(
             };
           });
         }
-      }
     } catch {
       // fallback to rich reviews below
     }
@@ -678,3 +811,143 @@ export async function postReview(
     reactions: { helpful: 1, love: 1 },
   };
 }
+
+export type WatchProvider = {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string;
+};
+
+export async function fetchWatchProviders(region: string = 'IN'): Promise<WatchProvider[]> {
+  try {
+    const data = await directFetchTmdbRaw(`watch/providers/movie?watch_region=${region}`);
+    return data.results || [];
+  } catch (err) {
+    console.warn('Providers fetch error', err);
+    return [];
+  }
+}
+
+export interface DiscoverFilters {
+  providerId?: number;
+  genreId?: number;
+  year?: string;
+  yearFrom?: number;
+  yearTo?: number;
+  yearBefore?: number;
+  yearAfter?: number;
+  minRating?: number;
+  language?: string;
+  sort?: string;
+  query?: string;
+}
+
+export async function discoverMoviesWithFilters(
+  type: 'movie' | 'tv' | 'all' = 'all',
+  filters: DiscoverFilters
+): Promise<Movie[]> {
+  try {
+    if (filters.query) {
+      if (type === 'all') {
+        const [movieData, tvData] = await Promise.all([
+          directFetchTmdbRaw(`search/movie?query=${encodeURIComponent(filters.query)}`),
+          directFetchTmdbRaw(`search/tv?query=${encodeURIComponent(filters.query)}`)
+        ]);
+        const moviesFormatted = (movieData.results || []).map((m: any) => formatTmdbMovie(m, 'movie'));
+        const tvFormatted = (tvData.results || []).map((m: any) => formatTmdbMovie(m, 'tv'));
+        const combined = [...moviesFormatted, ...tvFormatted]
+          .sort((a, b) => parseFloat(b.score) - parseFloat(a.score))
+          .slice(0, 20);
+        return combined;
+      } else {
+        const data = await directFetchTmdbRaw(`search/${type}?query=${encodeURIComponent(filters.query)}`);
+        const items = (data.results || []).slice(0, 20);
+        return items.map((m: any) => formatTmdbMovie(m, type));
+      }
+    } else {
+      const getEndpoint = (t: 'movie' | 'tv') => {
+        // Use appropriate watch region: US for US-only providers like HBO, Peacock, Hulu
+        const usOnlyProviders = [15, 384, 1825, 386, 2303];
+        const region = filters.providerId && usOnlyProviders.includes(filters.providerId) ? 'US' : 'IN';
+
+        let endpoint = `discover/${t}?watch_region=${region}`;
+        if (filters.providerId) endpoint += `&with_watch_providers=${filters.providerId}`;
+        if (filters.genreId) endpoint += `&with_genres=${filters.genreId}`;
+
+        // Date ranges: "Released between", "Released before", "Released after", or "Exact year"
+        if (filters.year) {
+          if (t === 'movie') endpoint += `&primary_release_year=${filters.year}`;
+          else endpoint += `&first_air_date_year=${filters.year}`;
+        } else if (filters.yearFrom && filters.yearTo) {
+          if (t === 'movie') {
+            endpoint += `&primary_release_date.gte=${filters.yearFrom}-01-01&primary_release_date.lte=${filters.yearTo}-12-31`;
+          } else {
+            endpoint += `&first_air_date.gte=${filters.yearFrom}-01-01&first_air_date.lte=${filters.yearTo}-12-31`;
+          }
+        } else if (filters.yearBefore) {
+          if (t === 'movie') {
+            endpoint += `&primary_release_date.lte=${filters.yearBefore}-12-31`;
+          } else {
+            endpoint += `&first_air_date.lte=${filters.yearBefore}-12-31`;
+          }
+        } else if (filters.yearAfter) {
+          if (t === 'movie') {
+            endpoint += `&primary_release_date.gte=${filters.yearAfter}-01-01`;
+          } else {
+            endpoint += `&first_air_date.gte=${filters.yearAfter}-01-01`;
+          }
+        }
+
+        // Rating filter
+        if (filters.minRating && filters.minRating > 0) {
+          endpoint += `&vote_average.gte=${filters.minRating}&vote_count.gte=30`;
+        }
+
+        // Original language filter
+        if (filters.language && filters.language !== 'all') {
+          endpoint += `&with_original_language=${filters.language}`;
+        }
+
+        // Sorting
+        if (filters.sort) endpoint += `&sort_by=${filters.sort}`;
+        else endpoint += `&sort_by=popularity.desc`;
+
+        return endpoint;
+      };
+
+      if (type === 'all') {
+        const [movieData, tvData] = await Promise.all([
+          directFetchTmdbRaw(getEndpoint('movie')),
+          directFetchTmdbRaw(getEndpoint('tv'))
+        ]);
+
+        const moviesFormatted = (movieData.results || []).map((m: any) => formatTmdbMovie(m, 'movie'));
+        const tvFormatted = (tvData.results || []).map((m: any) => formatTmdbMovie(m, 'tv'));
+
+        let combined = [...moviesFormatted, ...tvFormatted];
+
+        // Apply custom sort for combined results
+        if (filters.sort === 'vote_average.desc') {
+          combined.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
+        } else if (filters.sort === 'primary_release_date.desc') {
+          combined.sort((a, b) => b.releaseYear - a.releaseYear);
+        } else if (filters.sort === 'primary_release_date.asc') {
+          combined.sort((a, b) => a.releaseYear - b.releaseYear);
+        } else {
+          // Interleave or sort by popularity order
+          combined.sort((a, b) => (b.spotlight ? 1 : 0) - (a.spotlight ? 1 : 0));
+        }
+
+        return combined.slice(0, 30);
+      } else {
+        const data = await directFetchTmdbRaw(getEndpoint(type as 'movie' | 'tv'));
+        const items = (data.results || []).slice(0, 30);
+        return items.map((m: any) => formatTmdbMovie(m, type as 'movie' | 'tv'));
+      }
+    }
+  } catch (err) {
+    console.warn('Discover fetch error', err);
+    return [];
+  }
+}
+

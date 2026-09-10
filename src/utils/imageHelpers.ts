@@ -1,7 +1,10 @@
 import type React from 'react';
+import { isDataSaverActive } from '../services/themeStore';
 
 /**
  * Image URL Builder & Resolution Helpers for TMDB & Cinema Assets
+ * Converts images to optimized WebP format via high-performance /api/image service.
+ * Respects Data Saver mode to minimize bandwidth consumption.
  * 
  * Orientation distinction:
  * - Posters: Vertical / Portrait (2:3 aspect ratio). Sizes: 'w185', 'w342', 'w500', 'w780', 'original'
@@ -11,10 +14,61 @@ import type React from 'react';
 export type PosterSize = 'w185' | 'w342' | 'w500' | 'w780' | 'original';
 export type BackdropSize = 'w780' | 'w1280' | 'original';
 
-export const FALLBACK_POSTER =
-  'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80';
-export const FALLBACK_BACKDROP =
-  'https://images.unsplash.com/photo-1518676590629-3dcbd9c5a5c9?auto=format&fit=crop&w=1280&q=80';
+export const FALLBACK_POSTER = '/api/image?type=poster';
+export const FALLBACK_BACKDROP = '/api/image?type=backdrop';
+
+/**
+ * Converts any image URL into a high-performance, server-optimized WebP stream
+ */
+export function toWebpUrl(
+  urlOrPath: string | null | undefined,
+  width?: number,
+  quality?: number,
+  type: 'poster' | 'backdrop' = 'poster'
+): string {
+  if (!urlOrPath) return `/api/image?type=${type}`;
+
+  // If already an /api/image URL or data/blob URI, return as-is
+  if (urlOrPath.startsWith('/api/image') || urlOrPath.startsWith('data:') || urlOrPath.startsWith('blob:')) {
+    return urlOrPath;
+  }
+
+  const isDataSaver = isDataSaverActive();
+
+  // Normalize TMDB 'original' URLs to efficient CDN resolutions
+  let cleanUrlOrPath = urlOrPath;
+  if (cleanUrlOrPath.includes('image.tmdb.org/t/p/original')) {
+    const tmdbReplacement = isDataSaver ? 'w342' : (type === 'backdrop' ? 'w780' : 'w500');
+    cleanUrlOrPath = cleanUrlOrPath.replace('/t/p/original', `/t/p/${tmdbReplacement}`);
+  }
+
+  const effectiveQuality = quality !== undefined ? quality : (isDataSaver ? 52 : 75);
+  let effectiveWidth = width;
+  if (isDataSaver && effectiveWidth) {
+    // In Data Saver, cap maximum image dimensions
+    effectiveWidth = Math.min(effectiveWidth, type === 'backdrop' ? 720 : 342);
+  }
+
+  const params = new URLSearchParams();
+  if (cleanUrlOrPath.startsWith('http://') || cleanUrlOrPath.startsWith('https://')) {
+    params.set('url', cleanUrlOrPath);
+  } else {
+    // TMDB relative path e.g. /6izwz7rsy95ARzTR3poZ8H6c5pp.jpg
+    params.set('path', cleanUrlOrPath);
+  }
+
+  if (effectiveWidth && effectiveWidth > 0) {
+    params.set('w', effectiveWidth.toString());
+  }
+  if (effectiveQuality) {
+    params.set('q', effectiveQuality.toString());
+  }
+  if (type) {
+    params.set('type', type);
+  }
+
+  return `/api/image?${params.toString()}`;
+}
 
 /**
  * Gracefully replaces a broken image element source with a verified cinematic visual
@@ -25,56 +79,62 @@ export function handleImageError(
 ): void {
   const target = e.currentTarget;
   const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
-  if (target.src !== fallback) {
+  if (target.src !== fallback && !target.src.endsWith(fallback)) {
     target.src = fallback;
   }
 }
 
 /**
- * Builds a vertical poster URL (2:3 aspect ratio) with graceful fallbacks
+ * Builds a vertical poster URL (2:3 aspect ratio) converted to optimized WebP
  */
 export function getPosterUrl(
   pathOrUrl: string | null | undefined,
-  size: PosterSize = 'w500',
+  size: PosterSize = 'w342',
   fallbackPathOrUrl?: string | null
 ): string {
   const target = pathOrUrl || fallbackPathOrUrl;
   if (!target) return FALLBACK_POSTER;
 
-  // If already an absolute URL (http/https), return it directly
-  if (target.startsWith('http://') || target.startsWith('https://')) {
-    // If it's a tmdb URL, allow replacing the size segment if needed
-    if (target.includes('image.tmdb.org/t/p/') && size !== 'original') {
-      return target.replace(/\/t\/p\/(w\d+|original)\//, `/t/p/${size}/`);
-    }
-    return target;
+  const isDataSaver = isDataSaverActive();
+
+  if (isDataSaver) {
+    return toWebpUrl(target, 240, 50, 'poster');
   }
 
-  // TMDB relative path e.g. "/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg"
-  const cleanPath = target.startsWith('/') ? target : `/${target}`;
-  return `https://image.tmdb.org/t/p/${size}${cleanPath}`;
+  const widthMap: Record<PosterSize, number> = {
+    w185: 185,
+    w342: 342,
+    w500: 480,
+    w780: 640,
+    original: 780,
+  };
+  const width = widthMap[size] || 342;
+  return toWebpUrl(target, width, 75, 'poster');
 }
 
 /**
- * Builds a horizontal backdrop URL (16:9 aspect ratio) with graceful fallbacks
+ * Builds a horizontal backdrop URL (16:9 aspect ratio) converted to optimized WebP
  */
 export function getBackdropUrl(
   pathOrUrl: string | null | undefined,
-  size: BackdropSize = 'w1280',
+  size: BackdropSize = 'w780',
   fallbackPathOrUrl?: string | null
 ): string {
   const target = pathOrUrl || fallbackPathOrUrl;
   if (!target) return FALLBACK_BACKDROP;
 
-  // If already an absolute URL (http/https), return it directly
-  if (target.startsWith('http://') || target.startsWith('https://')) {
-    if (target.includes('image.tmdb.org/t/p/') && size !== 'original') {
-      return target.replace(/\/t\/p\/(w\d+|original)\//, `/t/p/${size}/`);
-    }
-    return target;
+  const isDataSaver = isDataSaverActive();
+
+  if (isDataSaver) {
+    return toWebpUrl(target, 640, 50, 'backdrop');
   }
 
-  // TMDB relative path
-  const cleanPath = target.startsWith('/') ? target : `/${target}`;
-  return `https://image.tmdb.org/t/p/${size}${cleanPath}`;
+  const widthMap: Record<BackdropSize, number> = {
+    w780: 780,
+    w1280: 1080,
+    original: 1280,
+  };
+  const width = widthMap[size] || 780;
+  return toWebpUrl(target, width, 75, 'backdrop');
 }
+

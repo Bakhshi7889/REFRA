@@ -16,7 +16,7 @@
   --glass-bg: rgba(20, 22, 31, 0.55);
   --glass-bg-elevated: rgba(20, 22, 31, 0.72);
   --glass-subtle-bg: rgba(34, 38, 53, 0.16);
-  --glass-pill-bg: rgba(20, 22, 31, 0.58);
+  --glass-pill-bg: rgba(16, 18, 24, 0.65);
   --glass-border: rgba(255, 255, 255, 0.12);
   --glass-border-subtle: rgba(255, 255, 255, 0.08);
   --glass-sheet-bg: rgba(14, 16, 22, 0.85);
@@ -139,8 +139,10 @@ button, [role="button"], a {
 
 @layer utilities {
   .liquid-glass {
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 4px)) saturate(180%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 4px)) saturate(180%);
     background-color: var(--glass-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.36);
@@ -148,8 +150,10 @@ button, [role="button"], a {
   }
 
   .liquid-glass-subtle {
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-subtle)) blur(var(--glass-blur-strength, 3px)) saturate(160%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-subtle)) blur(var(--glass-blur-strength, 3px)) saturate(160%);
     background-color: var(--glass-subtle-bg);
     border: 1px solid var(--glass-border);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -157,12 +161,217 @@ button, [role="button"], a {
   }
 
   .liquid-glass-pill {
-    -webkit-backdrop-filter: blur(20px) saturate(175%);
-    backdrop-filter: blur(20px) saturate(175%);
-    background-color: var(--glass-pill-bg);
+    -webkit-backdrop-filter: blur(16px) saturate(215%);
+    backdrop-filter: blur(16px) saturate(215%);
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(215%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(215%);
+    background-color: var(--glass-pill-bg, rgba(16, 18, 24, 0.65));
     border: 1px solid var(--glass-border);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  /* Specific Liquid Glass Mode Overrides */
+  [data-liquid-glass="crystal"] .liquid-glass {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(185%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(185%);
+    background-color: rgba(255, 255, 255, var(--glass-white-wash, 0.015));
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.16));
+    /* Optical Dual-Rim Meniscus Specular Highlights (Top & Bottom Prism Catch) */
+    box-shadow: 
+      0 12px 36px rgba(0, 0, 0, 0.4), 
+      inset 0 1.5px 1px rgba(255, 255, 255, var(--glass-specular-alpha, 0.72)),
+      inset 0 -1.5px 1px rgba(255, 255, 255, var(--glass-specular-alpha, 0.72)),
+      inset 0 3px 6px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 3 + 0.04)),
+      inset 0 -3px 6px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 3 + 0.04)),
+      inset 3px 0 8px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 2 + 0.03)),
+      inset -3px 0 8px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 2 + 0.03));
+  }
+
+  [data-liquid-glass="crystal"] .liquid-glass-pill {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(220%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-crystal-medium)) blur(var(--glass-blur-strength, 3px)) saturate(220%);
+    background-color: rgba(16, 18, 24, 0.65);
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.16));
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  }
+
+  /* 3D Volumetric Physical Lens Depth (Convex Meniscus & Realistic Optical Depth) */
+  [data-glass-depth="realistic3D"] [data-liquid-depth="true"] {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(190%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(190%);
+    background-color: rgba(255, 255, 255, var(--glass-white-wash, 0.015));
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.18));
+    /* Multi-tier volumetric physical depth: top & bottom specular stretch reflections, volume & lateral arcs */
+    box-shadow:
+      0 20px 48px -8px rgba(0, 0, 0, 0.68),
+      0 4px 14px rgba(0, 0, 0, 0.46),
+      inset 0 1.5px 0.75px rgba(255, 255, 255, var(--glass-specular-alpha, 0.75)),
+      inset 0 -1.5px 0.75px rgba(255, 255, 255, var(--glass-specular-alpha, 0.75)),
+      inset 0 3.5px 8px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 3 + 0.05)),
+      inset 0 -3.5px 8px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 3 + 0.05)),
+      inset 0 0 16px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 0.5)),
+      inset 5px 0 12px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 2 + 0.04)),
+      inset -5px 0 12px rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) * 2 + 0.04));
+  }
+
+  [data-glass-depth="realistic3D"] .liquid-glass-pill {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(225%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-volumetric-medium)) blur(var(--glass-blur-strength, 3px)) saturate(225%);
+    background-color: rgba(16, 18, 24, 0.65);
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.18));
+    box-shadow:
+      0 20px 48px -8px rgba(0, 0, 0, 0.68),
+      0 4px 14px rgba(0, 0, 0, 0.46);
+  }
+
+  [data-glass-depth="realistic3D"] .liquid-glass-pill::before,
+  [data-glass-depth="realistic3D"] .liquid-glass-pill::after {
+    display: none !important;
+  }
+
+  /* 3D Glass Pill Dual-Edge Specular Sheen (Top and Bottom Curvature Reflection) */
+  [data-glass-depth="realistic3D"] [data-liquid-depth="true"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg, 
+      rgba(255, 255, 255, var(--glass-sheen-top, 0.065)) 0%, 
+      rgba(255, 255, 255, 0.005) 20%, 
+      rgba(255, 255, 255, 0.002) 50%, 
+      rgba(255, 255, 255, 0.006) 80%, 
+      rgba(255, 255, 255, var(--glass-sheen-top, 0.065)) 100%
+    );
+    z-index: 0;
+  }
+
+  /* Physical Bottom Meniscus Stretch Reflection Arc */
+  [data-glass-depth="realistic3D"] [data-liquid-depth="true"]::after {
+    content: "";
+    position: absolute;
+    inset: auto 16px 0 16px;
+    height: 1.5px;
+    background: linear-gradient(
+      90deg, 
+      transparent 0%, 
+      rgba(255, 255, 255, calc(var(--glass-specular-alpha, 0.75) * 0.5)) 15%, 
+      rgba(255, 255, 255, var(--glass-specular-alpha, 0.75)) 50%, 
+      rgba(255, 255, 255, calc(var(--glass-specular-alpha, 0.75) * 0.5)) 85%, 
+      transparent 100%
+    );
+    border-radius: 9999px;
+    pointer-events: none;
+    box-shadow: 0 -1px 3px rgba(255, 255, 255, 0.35);
+    z-index: 1;
+  }
+
+  [data-glass-depth="subtleBevel"] .liquid-glass-pill {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
+  }
+
+  [data-glass-depth="minimalist"] .liquid-glass-pill {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Navigation SVG Drop Shadow Classes */
+  .nav-svg-shadow {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.75));
+  }
+  .nav-svg-shadow-active {
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.35));
+  }
+
+  [data-liquid-glass="frosted"] .liquid-glass {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-frosted-medium)) blur(var(--glass-blur-strength, 10px)) saturate(160%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-frosted-medium)) blur(var(--glass-blur-strength, 10px)) saturate(160%);
+    background-color: rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) + 0.08));
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.22));
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, var(--glass-specular-alpha, 0.5));
+  }
+  [data-liquid-glass="frosted"] .liquid-glass-pill {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-frosted-medium)) blur(var(--glass-blur-strength, 10px)) saturate(160%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-frosted-medium)) blur(var(--glass-blur-strength, 10px)) saturate(160%);
+    background-color: rgba(255, 255, 255, calc(var(--glass-white-wash, 0.015) + 0.08));
+    border-color: rgba(255, 255, 255, var(--glass-border-alpha, 0.22));
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  [data-liquid-glass="darkSmoke"] .liquid-glass {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-darkSmoke-medium)) blur(var(--glass-blur-strength, 6px)) saturate(140%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-darkSmoke-medium)) blur(var(--glass-blur-strength, 6px)) saturate(140%);
+    background-color: rgba(10, 12, 18, 0.82);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  [data-liquid-glass="darkSmoke"] .liquid-glass-pill {
+    -webkit-backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-darkSmoke-medium)) blur(var(--glass-blur-strength, 6px)) saturate(140%);
+    backdrop-filter: var(--liquid-filter-url, url(#liquid-glass-darkSmoke-medium)) blur(var(--glass-blur-strength, 6px)) saturate(140%);
+    background-color: rgba(10, 12, 18, 0.82);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  }
+
+  /* 2. Pure CSS Blur (backdrop-blur-md, flat frosted glass without SVG turbulence) */
+  [data-liquid-glass="blur"] .liquid-glass,
+  [data-liquid-glass="blur"] .liquid-glass-subtle,
+  [data-liquid-glass="blur"] [data-liquid-depth="true"] {
+    -webkit-backdrop-filter: blur(var(--glass-blur-strength, 14px)) saturate(160%) !important;
+    backdrop-filter: blur(var(--glass-blur-strength, 14px)) saturate(160%) !important;
+    background-color: rgba(16, 18, 24, 0.72) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  }
+  [data-liquid-glass="blur"] .liquid-glass-pill {
+    -webkit-backdrop-filter: blur(var(--glass-blur-strength, 14px)) saturate(175%) !important;
+    backdrop-filter: blur(var(--glass-blur-strength, 14px)) saturate(175%) !important;
+    background-color: rgba(16, 18, 24, 0.72) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+  }
+  [data-liquid-glass="blur"] .liquid-glass-pill::before,
+  [data-liquid-glass="blur"] .liquid-glass-pill::after {
+    display: none !important;
+  }
+
+  /* 3. Plain Opaque (Zero blur, crisp dark matte surface) */
+  [data-liquid-glass="opaque"] .liquid-glass,
+  [data-liquid-glass="opaque"] .liquid-glass-subtle,
+  [data-liquid-glass="opaque"] [data-liquid-depth="true"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: #12141c !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  }
+  [data-liquid-glass="opaque"] .liquid-glass-pill {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: #12141c !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  }
+  [data-liquid-glass="opaque"] .liquid-glass-pill::before,
+  [data-liquid-glass="opaque"] .liquid-glass-pill::after {
+    display: none !important;
+  }
+
+  [data-liquid-glass="off"] .liquid-glass,
+  [data-liquid-glass="off"] .liquid-glass-subtle {
+    -webkit-backdrop-filter: blur(var(--glass-blur-strength, 16px)) saturate(160%) !important;
+    backdrop-filter: blur(var(--glass-blur-strength, 16px)) saturate(160%) !important;
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  [data-liquid-glass="off"] .liquid-glass-pill {
+    -webkit-backdrop-filter: blur(var(--glass-blur-strength, 16px)) saturate(160%) !important;
+    backdrop-filter: blur(var(--glass-blur-strength, 16px)) saturate(160%) !important;
+    background-color: var(--glass-bg);
+    border-color: var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   }
 
   /* Universal backdrop-blur utilities ensuring -webkit prefix works on Safari / iOS / mobile WebKit */
@@ -203,6 +412,75 @@ button, [role="button"], a {
     backdrop-filter: blur(24px) saturate(150%);
     -webkit-backdrop-filter: blur(24px) saturate(150%);
     transition: background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+  }
+
+  /* ================= SENIOR ENGINEER COMPOSITOR ENGINE & BLUR OVERRIDES ================= */
+  
+  /* Aggressively Reduced Blur Mode (4-8px max for background content cards) */
+  [data-blur-budget="optimized"] .glass-card-themed {
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    backdrop-filter: blur(8px) saturate(140%);
+    background-color: rgba(var(--dominant-rgb, 20, 22, 31), 0.82);
+  }
+  
+  @media (max-width: 768px) {
+    [data-blur-budget="optimized"] .glass-card-themed {
+      -webkit-backdrop-filter: blur(5px) saturate(125%);
+      backdrop-filter: blur(5px) saturate(125%);
+      background-color: rgba(var(--dominant-rgb, 20, 22, 31), 0.86);
+    }
+  }
+
+  /* Solid Fallback / Zero Blur Mode (100% GPU-Free for Budget / Battery) */
+  [data-blur-budget="solid"] .liquid-glass,
+  [data-blur-budget="solid"] .liquid-glass-subtle,
+  [data-blur-budget="solid"] .liquid-glass-pill,
+  [data-blur-budget="solid"] .glass-card-themed,
+  [data-anim-mode="reduced"] .liquid-glass,
+  [data-anim-mode="reduced"] .glass-card-themed {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background-color: rgba(var(--dominant-rgb, 14, 16, 22), 0.94) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45) !important;
+  }
+
+  /* CSS Containment to prevent full document reflow */
+  [data-containment="true"] .glass-card-themed,
+  [data-containment="true"] .media-card-item,
+  [data-containment="true"] .compositor-card {
+    contain: layout paint;
+  }
+
+  /* Compositor-Only Smooth Premium Motion (300ms cubic-bezier(0.25, 0.1, 0.25, 1)) */
+  .compositor-motion {
+    transition-property: transform, opacity;
+    transition-duration: var(--anim-duration, 0.30s);
+    transition-timing-function: var(--anim-timing, cubic-bezier(0.25, 0.1, 0.25, 1));
+  }
+
+  /* Expanding Button Pattern */
+  .expand-button-trigger {
+    position: relative;
+    overflow: hidden;
+    transform-origin: center;
+    transition: transform var(--anim-duration, 0.30s) var(--anim-timing, cubic-bezier(0.25, 0.1, 0.25, 1)),
+                border-radius var(--anim-duration, 0.30s) ease,
+                background-color 0.2s ease;
+    will-change: transform;
+    contain: layout paint;
+  }
+
+  .expand-button-content {
+    opacity: 0;
+    transform: scale(0.92);
+    transition: opacity 0.25s ease 0.05s, transform 0.30s var(--anim-timing, cubic-bezier(0.25, 0.1, 0.25, 1)) 0.05s;
+    pointer-events: none;
+  }
+
+  .expand-button-trigger.expanded .expand-button-content {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
   }
 
   /* Themed Primary Action Button (Accent 10%) */

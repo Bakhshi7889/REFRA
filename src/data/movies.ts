@@ -29,7 +29,7 @@ export const FALLBACK_MOVIES: Movie[] = [
       'https://image.tmdb.org/t/p/original/lzWHmYZrT1Ztb4g4vKjJ3wKxYQ1.jpg',
       'https://image.tmdb.org/t/p/original/b0PlSFdDwbyK0cf5RxwDpaOJQvQ.jpg',
     ],
-    logoUrl: 'https://image.tmdb.org/t/p/w500/8kOW5x6TK25g7d20pT8Y1bY8x8y.png',
+    logoUrl: 'https://image.tmdb.org/t/p/w500/eYvF1LhPKuoBxOAmWjFTAK7EPWl.png',
     trailerYoutubeId: 'Way9Dexny3w',
     trailerUrl: 'https://www.youtube.com/watch?v=Way9Dexny3w',
     resolution: 'IMAX Enhanced',
@@ -71,6 +71,7 @@ export const FALLBACK_MOVIES: Movie[] = [
     fanart: [
       'https://image.tmdb.org/t/p/original/rLb2cwF3Pazuxaj0sytQ3nnjhJu.jpg',
     ],
+    logoUrl: 'https://image.tmdb.org/t/p/w500/b07VisHvZb0WzUpA8VB77wfMXwg.png',
     trailerYoutubeId: 'uYPbbksJxIg',
     trailerUrl: 'https://www.youtube.com/watch?v=uYPbbksJxIg',
     resolution: '4K UHD',
@@ -106,6 +107,7 @@ export const FALLBACK_MOVIES: Movie[] = [
     fanart: [
       'https://image.tmdb.org/t/p/original/6KInY11zUq8Q3i4w68W6P81rE6S.jpg',
     ],
+    logoUrl: 'https://image.tmdb.org/t/p/w500/1rcckWvL7bEbvVsnqGTbhE0iuBY.png',
     trailerYoutubeId: 'gCcx85zbxz4',
     trailerUrl: 'https://www.youtube.com/watch?v=gCcx85zbxz4',
     resolution: '4K HDR',
@@ -141,6 +143,7 @@ export const FALLBACK_MOVIES: Movie[] = [
       'https://image.tmdb.org/t/p/original/xJHokMbljvjADYdit5fK5VQsXEG.jpg',
       'https://image.tmdb.org/t/p/original/vgnoBSVzWAV9sN6997vW0neW5OD.jpg',
     ],
+    logoUrl: 'https://image.tmdb.org/t/p/w500/pRHIM8liJBYy1Z4wNgAizqCOuOU.png',
     trailerYoutubeId: 'zSWdZVtXT7E',
     trailerUrl: 'https://www.youtube.com/watch?v=zSWdZVtXT7E',
     resolution: 'IMAX Enhanced',
@@ -169,6 +172,7 @@ export const FALLBACK_MOVIES: Movie[] = [
     backdrops: [
       'https://image.tmdb.org/t/p/original/5P8SmMzSNYikXpxil6BYz9G660Q.jpg',
     ],
+    logoUrl: 'https://image.tmdb.org/t/p/w500/haibnO2TycgulXD1Fj7b94L9m9E.png',
     trailerYoutubeId: 'mqqft2x_Aa4',
     trailerUrl: 'https://www.youtube.com/watch?v=mqqft2x_Aa4',
     resolution: '4K UHD',
@@ -193,6 +197,7 @@ export const FALLBACK_MOVIES: Movie[] = [
     backdrops: [
       'https://image.tmdb.org/t/p/original/4HodYYKEIsGOdinkGi2Ucz6X9i0.jpg',
     ],
+    logoUrl: 'https://image.tmdb.org/t/p/w500/cmE0j3mQQe6xrzLryxGF9rF2KC8.png',
     trailerYoutubeId: 'cqGjhVJWtEg',
     trailerUrl: 'https://www.youtube.com/watch?v=cqGjhVJWtEg',
     resolution: '4K HDR',

@@ -91,7 +91,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
-        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+        style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y', contain: 'layout paint' }}
       >
         {inProgressMovies.map((movie) => {
           const progress = movie.progress!;
@@ -100,7 +100,8 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
               key={movie.id}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.08, ease: 'easeOut' }}
-              className="flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
+              style={{ willChange: 'transform', contain: 'layout paint' }}
+              className="media-card-item gpu-layer flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
               onClick={() => {
                 if (isDraggingRef.current) return;
                 onResume(movie);
@@ -151,7 +152,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
                 {/* Progress Bar directly on canvas */}
                 <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-white rounded-full transition-all duration-300"
+                    className="h-full bg-white rounded-full transition-[width] duration-300 ease-out"
                     style={{ width: `${progress.percentage}%` }}
                   />
                 </div>

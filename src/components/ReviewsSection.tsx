@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, Review } from '../types';
 import { fetchReviews, postReview } from '../services/movieApi';
+import { toWebpUrl } from '../utils/imageHelpers';
 
 interface ReviewsSectionProps {
   movie: Movie;
@@ -321,7 +322,7 @@ export const ReviewsSection: React.FC<ReviewsSectionProps> = ({ movie }) => {
                   <div className="flex items-center gap-2.5">
                     {rev.authorAvatar ? (
                       <img
-                        src={rev.authorAvatar}
+                        src={toWebpUrl(rev.authorAvatar, 80)}
                         alt={rev.author}
                         referrerPolicy="no-referrer"
                         className="w-8 h-8 rounded-full object-cover border border-white/10 shrink-0"

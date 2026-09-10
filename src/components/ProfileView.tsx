@@ -20,6 +20,9 @@ import {
   Upload,
   LogOut,
   Sparkles,
+  WifiOff,
+  Gauge,
+  ShieldCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -39,6 +42,7 @@ import {
 import { loginTraktUser, fetchTraktRemoteWatchlist } from '../services/traktApi';
 import { ThemeSettingsSection } from './ThemeSettingsSection';
 import { UiThemeConfig, DEFAULT_THEME_CONFIG, loadSavedThemeConfig, saveThemeConfig } from '../services/themeStore';
+import { toWebpUrl } from '../utils/imageHelpers';
 
 interface EmbedSettingsState {
   embedServer: 'VidSrc Pro' | 'AutoEmbed VIP' | 'SuperEmbed HD' | '2Embed Stream';
@@ -317,7 +321,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img
-                  src={traktUser.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80'}
+                  src={toWebpUrl(traktUser.avatarUrl, 100)}
                   alt={traktUser.username}
                   className="w-12 h-12 rounded-2xl object-cover border border-white/10 shrink-0"
                 />
@@ -429,7 +433,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         )}
       </div>
 
-      {/* ================= SECTION 2: UI COLOURS, BACKGROUNDS, FONTS & PALETTES ================= */}
+      {/* ================= SECTION 2: UI BACKGROUNDS, FONTS & GLASS SURFACE ================= */}
       <ThemeSettingsSection
         themeConfig={activeThemeConfig}
         onThemeChanged={handleThemeChange}
@@ -572,6 +576,106 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
+      {/* ================= SECTION 4: DATA SAVER & BANDWIDTH OPTIMIZATION ================= */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-3">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+            Network & Bandwidth Optimization
+          </h4>
+          <span
+            className={`text-[10px] font-medium flex items-center gap-1.5 ${
+              activeThemeConfig.dataSaverMode ? 'text-emerald-400' : 'text-neutral-400'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                activeThemeConfig.dataSaverMode ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-500'
+              }`}
+            />
+            {activeThemeConfig.dataSaverMode ? 'Data Saver Active' : 'Normal Fidelity'}
+          </span>
+        </div>
+
+        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 space-y-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
+                  activeThemeConfig.dataSaverMode
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : 'bg-white/5 text-neutral-300 border-white/10'
+                }`}
+              >
+                <WifiOff className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  Data Saver Mode
+                  {activeThemeConfig.dataSaverMode && (
+                    <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      ~85% Less Data
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-neutral-300 mt-0.5">
+                  Eliminates background downloads and halts idle timers.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextVal = !activeThemeConfig.dataSaverMode;
+                const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
+                handleThemeChange(nextCfg);
+                if (nextVal) {
+                  updateSetting('autoPlayTrailers', false);
+                  showToast('Data Saver activated: Idle cycling paused & bandwidth reduced');
+                } else {
+                  showToast('Standard fidelity restored');
+                }
+              }}
+              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+                activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
+              }`}
+              aria-label="Toggle Data Saver Mode"
+            >
+              <div
+                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                  activeThemeConfig.dataSaverMode
+                    ? 'translate-x-6 bg-neutral-950'
+                    : 'translate-x-1 bg-neutral-400'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-white/5">
+            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
+              <span className="text-[10px] text-neutral-400 block font-medium">Idle Timers</span>
+              <span className="text-xs font-semibold text-white mt-0.5 block">
+                {activeThemeConfig.dataSaverMode ? 'Paused completely' : 'Calm 25s auto-cycle'}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
+              <span className="text-[10px] text-neutral-400 block font-medium">Catalog Preload</span>
+              <span className="text-xs font-semibold text-white mt-0.5 block">
+                {activeThemeConfig.dataSaverMode ? 'Disabled (0 MB)' : 'Minimal hero pre-warm'}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5">
+              <span className="text-[10px] text-neutral-400 block font-medium">Image Quality</span>
+              <span className="text-xs font-semibold text-white mt-0.5 block">
+                {activeThemeConfig.dataSaverMode ? 'Optimized WebP (w185/w342)' : 'Crisp WebP (w342/w780)'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ================= SECTION 4: REAL INDEXEDDB DATABASE & STORAGE ================= */}
       <div className="space-y-2">
         <div className="flex items-center justify-between px-3">
@@ -642,55 +746,61 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* ================= SECTION 5: INTERFACE & HAPTICS ================= */}
+      {/* ================= SECTION 5: HARDWARE HAPTICS & DISTORTION ================= */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-3">
-          Interface & Visual Refraction
+          Hardware Haptics & Distortion
         </h4>
         <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 divide-y divide-white/5 overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Smartphone className="w-4 h-4 text-neutral-400" />
-              <div className="text-xs font-semibold text-white">Haptic Feedback</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateSetting('hapticFeedback', !settings.hapticFeedback)}
-              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-                settings.hapticFeedback ? 'bg-white' : 'bg-white/10'
-              }`}
-              aria-label="Toggle Haptic Feedback"
-            >
-              <div
-                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                  settings.hapticFeedback ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Smartphone className="w-4 h-4 text-neutral-400" />
+                <div>
+                  <div className="text-xs font-semibold text-white">Haptic Feedback</div>
+                  <div className="text-[11px] text-neutral-400">Micro-vibrations on taps and selections</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateSetting('hapticFeedback', !settings.hapticFeedback)}
+                className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+                  settings.hapticFeedback ? 'bg-white' : 'bg-white/10'
                 }`}
-              />
-            </button>
-          </div>
+                aria-label="Toggle Haptic Feedback"
+              >
+                <div
+                  className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                    settings.hapticFeedback ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
+            </div>
 
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Layers className="w-4 h-4 text-neutral-400" />
-              <div className="text-xs font-semibold text-white">Liquid Glass Refraction</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => updateSetting('liquidDistortion', !settings.liquidDistortion)}
-              className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-                settings.liquidDistortion ? 'bg-white' : 'bg-white/10'
-              }`}
-              aria-label="Toggle Liquid Distortion"
-            >
-              <div
-                className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                  settings.liquidDistortion ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Layers className="w-4 h-4 text-neutral-400" />
+                <div>
+                  <div className="text-xs font-semibold text-white">SVG Liquid Glass Distortion</div>
+                  <div className="text-[11px] text-neutral-400">Optical turbulence filter behind glass surfaces</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateSetting('liquidDistortion', !settings.liquidDistortion)}
+                className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+                  settings.liquidDistortion ? 'bg-white' : 'bg-white/10'
                 }`}
-              />
-            </button>
+                aria-label="Toggle Liquid Distortion"
+              >
+                <div
+                  className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                    settings.liquidDistortion ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
       {/* ================= TRAKT SIGN-IN MODAL ================= */}
       <AnimatePresence>

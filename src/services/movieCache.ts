@@ -1,5 +1,6 @@
 import { Movie } from '../types';
 import { getPosterUrl, getBackdropUrl } from '../utils/imageHelpers';
+import { isDataSaverActive } from './themeStore';
 
 export interface CachedCatalog {
   spotlightMovies: Movie[];
@@ -11,8 +12,8 @@ export interface CachedCatalog {
   thrillerMovies: Movie[];
 }
 
-const CACHE_KEY = 'refra_movies_6h_cache';
-const TIMESTAMP_KEY = 'refra_movies_6h_timestamp';
+const CACHE_KEY = 'refra_movies_6h_cache_v5';
+const TIMESTAMP_KEY = 'refra_movies_6h_timestamp_v5';
 export const SIX_HOURS_MS = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
 
 /**
@@ -60,7 +61,6 @@ export function getValid6HourCache(): CachedCatalog | null {
 
 /**
  * Stores fresh movie lists with a 6-hour expiration timestamp.
- * Also preloads posters into the browser image cache.
  */
 export function save6HourCache(catalog: CachedCatalog): void {
   if (typeof window === 'undefined') return;
@@ -69,8 +69,10 @@ export function save6HourCache(catalog: CachedCatalog): void {
     localStorage.setItem(CACHE_KEY, JSON.stringify(catalog));
     localStorage.setItem(TIMESTAMP_KEY, Date.now().toString());
 
-    // Preload top posters in background to ensure zero loading delay
-    preloadCatalogImages(catalog);
+    // Only minimal preload if Data Saver is not active
+    if (!isDataSaverActive()) {
+      preloadCatalogImages(catalog);
+    }
   } catch (err) {
     console.warn('Cache write notice (localStorage may be full):', err);
   }
@@ -90,34 +92,21 @@ export function clear6HourCache(): void {
 }
 
 /**
- * Silently pre-warms the browser's HTTP cache with poster and backdrop assets.
+ * Lightweight, strictly conservative asset pre-warming.
+ * Never downloads dozens of images on startup.
  */
 export function preloadCatalogImages(catalog: CachedCatalog): void {
   if (typeof window === 'undefined') return;
+  if (isDataSaverActive()) return;
 
-  const urlsToPreload = new Set<string>();
-
-  // Collect spotlight backdrops & posters (immediate hero view)
-  catalog.spotlightMovies.slice(0, 3).forEach((m) => {
-    if (m.backdropUrl) urlsToPreload.add(getBackdropUrl(m.backdropUrl, 'w1280'));
-    if (m.posterUrl) urlsToPreload.add(getPosterUrl(m.posterUrl, 'w500'));
-  });
-
-  // Collect top trending and anime posters
-  catalog.trendingMovies.slice(0, 8).forEach((m) => {
-    if (m.posterUrl) urlsToPreload.add(getPosterUrl(m.posterUrl, 'w500'));
-  });
-
-  catalog.animeMovies.slice(0, 8).forEach((m) => {
-    if (m.posterUrl) urlsToPreload.add(getPosterUrl(m.posterUrl, 'w500'));
-  });
-
-  // Trigger lightweight asynchronous background preload
-  urlsToPreload.forEach((url) => {
-    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+  // In normal mode, only gently pre-warm the primary hero banner (1 image)
+  const firstSpotlight = catalog.spotlightMovies?.[0];
+  if (firstSpotlight?.backdropUrl) {
+    const heroUrl = getBackdropUrl(firstSpotlight.backdropUrl, 'w780');
+    if (heroUrl) {
       const img = new Image();
       img.referrerPolicy = 'no-referrer';
-      img.src = url;
+      img.src = heroUrl;
     }
-  });
+  }
 }

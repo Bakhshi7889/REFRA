@@ -31,6 +31,7 @@ import {
   Languages,
   RotateCcw,
   Download,
+  ArrowDownUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, AnimeEpisode, StreamItem } from '../types';
@@ -44,9 +45,9 @@ import {
   parseStreamSpecBadges,
   generateFallbackStreams,
   isStreamMatchingCurrentMovie,
+  getStreamAudioInfo,
 } from '../utils/streamHelpers';
 import { ProviderLogo } from './ProviderLogo';
-import { DownloadStreamModal } from './DownloadStreamModal';
 import { lockScroll } from '../utils/scrollLock';
 
 export interface StreamFilters {
@@ -117,7 +118,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [appliedFilters, setAppliedFilters] = useState<StreamFilters>(DEFAULT_STREAM_FILTERS);
   const [pendingFilters, setPendingFilters] = useState<StreamFilters>(DEFAULT_STREAM_FILTERS);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   // Best stream under 5GB determination
   const bestUnder5GbStream = useMemo(() => {
@@ -444,13 +444,129 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return count;
   }, [appliedFilters]);
 
-  // Filter streams and default order as BEST (highest quality + bitrate + audio)
+  // State for single button that sorts by lowest size by quality without showing filter menus
+  const [sortByLowestSize, setSortByLowestSize] = useState(false);
+
+  // Frictionless download notification state
+  const [downloadNotice, setDownloadNotice] = useState<{
+    streamId: string;
+    movieTitle: string;
+    quality: string;
+    audio: string;
+    size: string;
+    isMagnet: boolean;
+  } | null>(null);
+
+  // Identify lowest-size stream in each quality tier
+  const lowestSizeStreamIds = useMemo(() => {
+    const minBytesMap = new Map<string, number>();
+    const idMap = new Map<string, string>();
+    streams.forEach((s) => {
+      const q = (s.quality || '1080p').toUpperCase();
+      const bytes = getStreamBytes(s);
+      if (bytes > 0) {
+        if (!minBytesMap.has(q) || bytes < (minBytesMap.get(q) || Infinity)) {
+          minBytesMap.set(q, bytes);
+          idMap.set(q, s.id);
+        }
+      }
+    });
+    return new Set(Array.from(idMap.values()));
+  }, [streams]);
+
+  // Filter streams and default order as BEST or Lowest Size by Quality
   const filteredStreams = useMemo(() => {
     const list = streams.filter((s) => matchesFilters(s, appliedFilters));
-    // Default as Best ranking
-    list.sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
+    if (sortByLowestSize) {
+      // Sort by quality tier first (4K > 1080p > 720p > 480p > 320p),
+      // and within each quality tier, sort by lowest file size ascending!
+      const getQualityRank = (q?: string): number => {
+        const norm = (q || '').toUpperCase();
+        if (norm.includes('4K') || norm.includes('2160')) return 5;
+        if (norm.includes('1080')) return 4;
+        if (norm.includes('720')) return 3;
+        if (norm.includes('480')) return 2;
+        if (norm.includes('320') || norm.includes('360') || norm.includes('240')) return 1;
+        return 0;
+      };
+
+      list.sort((a, b) => {
+        const qA = getQualityRank(a.quality);
+        const qB = getQualityRank(b.quality);
+        if (qA !== qB) {
+          return qB - qA; // Higher resolution first
+        }
+        const bytesA = getStreamBytes(a);
+        const bytesB = getStreamBytes(b);
+        if (bytesA <= 0 && bytesB > 0) return 1;
+        if (bytesB <= 0 && bytesA > 0) return -1;
+        return bytesA - bytesB; // Lowest size first!
+      });
+    } else {
+      // Default as Best ranking
+      list.sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
+    }
     return list;
-  }, [streams, appliedFilters, matchesFilters]);
+  }, [streams, appliedFilters, matchesFilters, sortByLowestSize]);
+
+  // Frictionless 0-friction download handler with clear audio track knowledge
+  const handleSeamlessDownload = useCallback(
+    (streamToDownload: StreamItem) => {
+      if (!movie) return;
+      const safeTitle = (movie.title || 'Movie').replace(/[^a-zA-Z0-9_\s-]/g, '').trim();
+      const quality = streamToDownload.quality || '1080p';
+      const year = movie.releaseYear || '';
+      const audioInfo = getStreamAudioInfo(streamToDownload);
+      const cleanFileName = `${safeTitle} (${year}) [${quality}] [${audioInfo.languageText}].mp4`;
+
+      const rawUrl =
+        streamToDownload.directDownloadUrl ||
+        streamToDownload.rawDirectUrl ||
+        streamToDownload.url ||
+        `https://vidlink.pro/movie/${movie.tmdbId || '1084199'}`;
+
+      const isMagnet = rawUrl.startsWith('magnet:?');
+
+      if (isMagnet) {
+        try {
+          navigator.clipboard.writeText(rawUrl);
+        } catch {}
+
+        const link = document.createElement('a');
+        link.href = rawUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        try {
+          navigator.clipboard.writeText(rawUrl);
+        } catch {}
+
+        const link = document.createElement('a');
+        link.href = rawUrl;
+        link.download = cleanFileName;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      setDownloadNotice({
+        streamId: streamToDownload.id,
+        movieTitle: movie.title,
+        quality,
+        audio: audioInfo.fullLabel,
+        size: streamToDownload.fileSize || 'Auto Size',
+        isMagnet,
+      });
+
+      setTimeout(() => {
+        setDownloadNotice((curr) => (curr?.streamId === streamToDownload.id ? null : curr));
+      }, 5000);
+    },
+    [movie]
+  );
 
   // Determine active playing stream URL (Strictly for video streaming; never initiates file download)
   const activeStreamUrl = useMemo(() => {
@@ -656,6 +772,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const currentServerTitle = activeStream?.serverName || 'PenguPlay';
   const currentQualityTitle = activeStream?.quality || '4K';
 
+  const activeAudioInfo = useMemo(() => {
+    return getStreamAudioInfo(activeStream);
+  }, [activeStream]);
+
   const activeSpecBadges = useMemo(() => {
     if (activeStream) {
       return parseStreamSpecBadges(activeStream, 6);
@@ -836,6 +956,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                         {/* Squircle pills with sharp curved edges and gap */}
                         <div className="flex items-center gap-1.5 flex-wrap">
+                          {activeAudioInfo && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] bg-white/15 text-white border border-white/30 select-none whitespace-nowrap">
+                              <Volume2 className="w-3 h-3 text-neutral-300 stroke-[2.5]" />
+                              <span>Audio: {activeAudioInfo.badgeLabel}</span>
+                            </span>
+                          )}
+
                           {activeSpecBadges.map((badge) => (
                             <span
                               key={badge.id}
@@ -852,8 +979,29 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Right: Switch Server Action & Chevron */}
+                    {/* Right: Quick Seamless Download & Switch Server Action & Chevron */}
                     <div className="flex items-center gap-2 shrink-0">
+                      {activeStream && (
+                        <button
+                          type="button"
+                          id="btn-active-stream-download"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSeamlessDownload(activeStream);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border border-white/15 shadow-xs"
+                          title={`Download ${activeStream.quality} • Audio: ${activeAudioInfo?.fullLabel}`}
+                          aria-label="Download current movie stream"
+                        >
+                          {downloadNotice?.streamId === activeStream.id ? (
+                            <Check className="w-3.5 h-3.5 stroke-[3] text-emerald-400" />
+                          ) : (
+                            <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                          )}
+                          <span className="hidden xs:inline">Download</span>
+                        </button>
+                      )}
+
                       <span className="hidden sm:inline text-xs font-semibold text-neutral-300">
                         {isDropdownOpen ? 'Close' : 'Switch Server'}
                       </span>
@@ -912,8 +1060,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                           </button>
                         </div>
 
-                        {/* Header with Sources count and Filters toggle button */}
-                        <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                        {/* Header with Sources count, Single Sort by Lowest Size Button, and Filters toggle */}
+                        <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5 flex-wrap sm:flex-nowrap">
                           <div className="flex items-center gap-2">
                             <div className="text-xs font-bold text-white flex items-center gap-1.5">
                               <span>Available Sources</span>
@@ -921,39 +1069,63 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                 {filteredStreams.length}
                               </span>
                             </div>
-                            <span className="hidden sm:inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
-                              ★ Ranked by Best
+                            <span className="hidden md:inline-block text-[9px] font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
+                              {sortByLowestSize ? '⚡ Lowest Size / Quality' : '★ Ranked by Best'}
                             </span>
                           </div>
 
-                          {/* Filter toggle button */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!isFilterDropdownOpen) {
-                                setPendingFilters(appliedFilters);
-                              }
-                              setIsFilterDropdownOpen((prev) => !prev);
-                            }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-[0.96] ${
-                              isFilterDropdownOpen || activeFilterCount > 0
-                                ? 'bg-white/20 text-white'
-                                : 'bg-white/5 text-neutral-300 hover:text-white'
-                            }`}
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                            <span>Filters</span>
-                            {activeFilterCount > 0 && (
-                              <span className="w-4 h-4 rounded-full bg-white text-black text-[10px] font-extrabold flex items-center justify-center">
-                                {activeFilterCount}
-                              </span>
-                            )}
-                            <ChevronDown
-                              className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                                isFilterDropdownOpen ? 'rotate-180' : ''
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            {/* Single button that sorts by lowest size by quality without showing filter dropdowns */}
+                            <button
+                              type="button"
+                              id="btn-sort-lowest-size"
+                              onClick={() => setSortByLowestSize((prev) => !prev)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-[0.96] select-none ${
+                                sortByLowestSize
+                                  ? 'bg-white text-black font-bold shadow-md border border-white'
+                                  : 'bg-white/10 text-neutral-200 hover:text-white hover:bg-white/15 border border-white/10'
                               }`}
-                            />
-                          </button>
+                              title={
+                                sortByLowestSize
+                                  ? 'Currently sorted by lowest size per quality. Click to reset.'
+                                  : 'Sort by lowest size for each quality without opening filter menu'
+                              }
+                              aria-label="Sort by lowest size by quality"
+                            >
+                              <ArrowDownUp className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Lowest Size</span>
+                              {sortByLowestSize && <Check className="w-3 h-3 stroke-[3]" />}
+                            </button>
+
+                            {/* Filter toggle button */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isFilterDropdownOpen) {
+                                  setPendingFilters(appliedFilters);
+                                }
+                                setIsFilterDropdownOpen((prev) => !prev);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-[0.96] ${
+                                isFilterDropdownOpen || activeFilterCount > 0
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-white/5 text-neutral-300 hover:text-white'
+                              }`}
+                            >
+                              <SlidersHorizontal className="w-3.5 h-3.5" />
+                              <span>Filters</span>
+                              {activeFilterCount > 0 && (
+                                <span className="w-4 h-4 rounded-full bg-white text-black text-[10px] font-extrabold flex items-center justify-center">
+                                  {activeFilterCount}
+                                </span>
+                              )}
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isFilterDropdownOpen ? 'rotate-180' : ''
+                                }`}
+                              />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Expandable Filter Panel */}
@@ -1293,6 +1465,65 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                           </div>
                         )}
 
+                        {/* Seamless Download Notification Banner */}
+                        <AnimatePresence>
+                          {downloadNotice && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                              transition={{ duration: 0.2 }}
+                              className="p-3 rounded-xl bg-white/[0.08] border border-white/20 backdrop-blur-xl flex items-center justify-between gap-3 text-left"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                </div>
+                                <div className="min-w-0 space-y-0.5">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-bold text-white truncate">
+                                      {downloadNotice.isMagnet ? 'Magnet Dispatched' : 'Download Started'}: {downloadNotice.movieTitle} [{downloadNotice.quality}]
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-neutral-300 font-mono">
+                                      {downloadNotice.size}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-neutral-300 flex items-center gap-1.5 flex-wrap">
+                                    <Volume2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                                    <span className="font-semibold text-white">Audio: {downloadNotice.audio}</span>
+                                    <span className="text-neutral-400">• Link auto-copied</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const stream = streams.find((st) => st.id === downloadNotice.streamId);
+                                    if (stream) {
+                                      const url = stream.directDownloadUrl || stream.rawDirectUrl || stream.url;
+                                      if (url) navigator.clipboard.writeText(url);
+                                    }
+                                  }}
+                                  className="px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-semibold text-white transition-all cursor-pointer"
+                                  title="Copy Link Again"
+                                >
+                                  Copy Link
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDownloadNotice(null)}
+                                  className="p-1 rounded-md hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                                  aria-label="Dismiss download notification"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
                         {/* Stream List */}
                         <div className="max-h-80 overflow-y-auto hide-scrollbar space-y-2 pr-1">
                           {isLoadingStreams ? (
@@ -1310,6 +1541,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                   activeStream?.fileSize === s.fileSize;
 
                               const specBadges = parseStreamSpecBadges(s, 6);
+                              const audioInfo = getStreamAudioInfo(s);
 
                               return (
                                 <div
@@ -1344,16 +1576,29 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                         {s.movieName || s.title || currentMovie.title}
                                       </h4>
 
+                                      {/* Highlight Lowest Size for Quality if active */}
+                                      {sortByLowestSize && lowestSizeStreamIds.has(s.id) && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
+                                          <span>⚡ Lowest {s.quality || 'HD'}</span>
+                                        </span>
+                                      )}
+
                                       {/* Highlight Best Under 5GB Stream */}
-                                      {s.id === bestUnder5GbStream?.id && (
+                                      {!sortByLowestSize && s.id === bestUnder5GbStream?.id && (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
                                           <span>★ Best &lt; 5GB</span>
                                         </span>
                                       )}
                                     </div>
 
-                                    {/* Specs Badges: Sharp curved edges (rounded-[4px]), full white back for best, gap in between */}
+                                    {/* Specs Badges: Audio Track Knowledge Badge + Spec Badges */}
                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                      {/* Clear Audio Track Knowledge */}
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] bg-white/10 text-neutral-100 border border-white/20 select-none whitespace-nowrap">
+                                        <Volume2 className="w-3 h-3 text-neutral-300 stroke-[2.5]" />
+                                        <span>Audio: {audioInfo.badgeLabel}</span>
+                                      </span>
+
                                       {specBadges.map((badge) => (
                                         <span
                                           key={badge.id}
@@ -1376,19 +1621,23 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                                     )}
                                   </div>
 
-                                  {/* Right side: Download action + Provider Logo & Selection Checkmark */}
-                                  <div className="shrink-0 flex items-center gap-2">
+                                  {/* Right side: 1-Tap Frictionless Download, Provider Logo & Selection Checkmark */}
+                                  <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setActiveStream(s);
-                                        setIsDownloadModalOpen(true);
+                                        handleSeamlessDownload(s);
                                       }}
-                                      title="Download this stream"
-                                      className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/20 text-neutral-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-neutral-200 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-white/15 shadow-xs"
+                                      title={`Download ${s.quality || ''} • Audio: ${audioInfo.fullLabel}`}
+                                      aria-label="Download movie stream"
                                     >
-                                      <Download className="w-3.5 h-3.5" />
+                                      {downloadNotice?.streamId === s.id ? (
+                                        <Check className="w-3.5 h-3.5 stroke-[3] text-emerald-400" />
+                                      ) : (
+                                        <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                                      )}
                                     </button>
 
                                     <ProviderLogo
@@ -1407,37 +1656,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                               );
                             })
                           ) : (
-                            /* Fallback to high-speed CDN mirrors if no add-on stream */
-                            <div className="space-y-1.5">
-                              <div className="text-[11px] text-neutral-400 px-1">
-                                Verified High-Speed Mirrors
-                              </div>
-                              {fallbackMirrors.map((srv) => (
-                                <button
-                                  key={srv.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveStream({
-                                      name: srv.name,
-                                      url: srv.url,
-                                      quality: srv.quality,
-                                      serverName: srv.name,
-                                    });
-                                    setIsDropdownOpen(false);
-                                    showToast(`Connected to ${srv.name}`, 'Verified High-Speed CDN');
-                                  }}
-                                  className="w-full p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-left transition-all cursor-pointer flex items-center justify-between"
-                                >
-                                  <div>
-                                    <div className="text-xs font-bold text-white">{srv.name}</div>
-                                    <div className="text-[10px] text-neutral-400">{srv.tag}</div>
-                                  </div>
-                                  <span className="text-[10px] text-white px-2 py-0.5 rounded-[4px] bg-white/10 border border-white/15 font-bold">
-                                    {srv.quality}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
+                            /* Fallback to high-speed CDN mirrors if no add-on stream - REMOVED */
+                            null
                           )}
                         </div>
                         </div>
@@ -1829,15 +2049,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             </div>
           )}
         </div>
-
-        {/* Dedicated Stream Download Modal */}
-        <DownloadStreamModal
-          isOpen={isDownloadModalOpen}
-          onClose={() => setIsDownloadModalOpen(false)}
-          stream={activeStream}
-          movie={currentMovie}
-          availableStreams={streams}
-        />
       </motion.div>
     </AnimatePresence>
   );

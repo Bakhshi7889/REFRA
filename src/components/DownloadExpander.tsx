@@ -258,30 +258,10 @@ export const DownloadExpander: React.FC<DownloadExpanderProps> = ({
       return;
     }
 
-    // 2. Direct browser download endpoint
-    // Uses the proxy with download=1 which sets Content-Disposition: attachment
-    const downloadEndpoint =
-      rawUrl.startsWith('/api/stream/proxy') && rawUrl.includes('download=1')
-        ? rawUrl
-        : `/api/stream/proxy?url=${encodeURIComponent(rawUrl)}&download=1&filename=${encodeURIComponent(cleanFileName)}`;
-
-    // Trigger direct file download in the browser WITHOUT navigating away or opening a new site
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = downloadEndpoint;
-    document.body.appendChild(iframe);
-
-    const anchor = document.createElement('a');
-    anchor.style.display = 'none';
-    anchor.href = downloadEndpoint;
-    anchor.setAttribute('download', cleanFileName);
-    document.body.appendChild(anchor);
-    anchor.click();
-
-    setTimeout(() => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      if (document.body.contains(anchor)) document.body.removeChild(anchor);
-    }, 10000);
+    // 2. Client-side redirect (No Proxy to save Server Bandwidth)
+    // Opening the raw URL in a new tab offloads bandwidth to the original host.
+    // We cannot force Content-Disposition on cross-origin requests without eating the bandwidth cost.
+    window.open(rawUrl, '_blank', 'noopener,noreferrer');
 
     setDownloadingId(null);
     setDownloadSuccessId(id);
@@ -721,7 +701,7 @@ export const DownloadExpander: React.FC<DownloadExpanderProps> = ({
             {isLoadingStreams && (
               <div className="flex items-center gap-1 text-neutral-400">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Checking mirrors...</span>
+                <span>Checking servers...</span>
               </div>
             )}
           </div>

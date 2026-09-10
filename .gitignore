@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+*.pem
+*.key
+*.cert
+*.sqlite*
+credentials.json

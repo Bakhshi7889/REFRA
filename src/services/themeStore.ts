@@ -316,6 +316,16 @@ export const LUXURY_PALETTES: LuxuryPalette[] = [
   },
 ];
 
+export type AnimationEngineMode = 'fluid' | 'compositor' | 'reduced';
+export type BlurBudgetOption = 'rich' | 'optimized' | 'solid';
+export type AnimationSpeedOption = 'fluid' | 'snappy' | 'instant';
+export type ExpansionPatternOption = 'flip' | 'scaleOrigin';
+export type LiquidGlassMode = 'crystal' | 'blur' | 'opaque' | 'frosted' | 'darkSmoke' | 'off';
+export type LiquidRefractionIntensity = 'subtle' | 'medium' | 'bold';
+export type EdgeStretchOption = 'subtle' | 'bold' | 'hyper' | 'off';
+export type GlassDepthProfile = 'realistic3D' | 'subtleBevel' | 'minimalist';
+export type GlassClarityOption = 'crystalClear' | 'natural' | 'subtleWash' | 'milkyFrosted';
+
 export interface UiThemeConfig {
   bgMode: 'color' | 'image';
   selectedBgColor: string;
@@ -324,18 +334,54 @@ export interface UiThemeConfig {
   bgOverlayDim: number; // 0 to 80%
   bgBlur: number; // 0 to 40px
   selectedFontId: FontOptionId;
-  selectedPaletteId: string | null; // null means standard neutral
+  selectedPaletteId: string | null; // null means standard neutral (no color tint)
+  
+  // Animation & Compositor Architecture Options
+  animationEngine: AnimationEngineMode; // 'fluid' (current default) | 'compositor' (Senior Engineer GPU mode) | 'reduced'
+  blurBudget: BlurBudgetOption; // 'rich' (16-24px) | 'optimized' (4-8px + fallback) | 'solid' (0px blur)
+  animationSpeed: AnimationSpeedOption; // 'fluid' (420ms) | 'snappy' (220ms bezier) | 'instant'
+  expansionPattern: ExpansionPatternOption; // 'flip' (organic dynamic) | 'scaleOrigin' (GPU scale + counter-scale)
+  enableContainment: boolean; // CSS contain: layout paint
+
+  // Optical Liquid Glass Refraction Engine
+  liquidGlassMode: LiquidGlassMode; // 'crystal' | 'blur' | 'opaque' | 'frosted' | 'darkSmoke' | 'off'
+  refractionIntensity: LiquidRefractionIntensity; // 'subtle' | 'medium' | 'bold'
+  refractionHeight?: number; // 0 to 40px (exact optical displacement scale, default 18px)
+  edgeStretch: EdgeStretchOption; // 'subtle' (natural optical bevel) | 'bold' (deep prism meniscus) | 'hyper' (hyper-meniscus warp) | 'off' (flat isotropic)
+  glassDepthProfile: GlassDepthProfile; // 'realistic3D' (convex lens meniscus refraction & optical volume) | 'subtleBevel' | 'minimalist'
+
+  // Glass Blur & Clarity (Anti-Milkiness / Real Crystal Glass)
+  glassBlur: number; // 0 to 32px (custom blur in glass, default 3px for crystal optical glass)
+  glassClarity: GlassClarityOption; // 'crystalClear' (1.5% white) | 'natural' (3.5%) | 'subtleWash' (7%) | 'milkyFrosted' (14%)
+  glassWhiteWash: number; // 0 to 25% white body opacity (default 1.5% to avoid whitish cloudy fog)
+
+  // Network & Bandwidth Optimization
+  dataSaverMode: boolean; // Low-bandwidth optimization: pauses idle cycling, disables trailer autoplay, uses compressed w185/w342 posters, disables aggressive preloading
 }
 
 export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   bgMode: 'image',
-  selectedBgColor: '#1E272E',
-  customBgImage: '/wallpapers/a340ce3e9261a4c29c891ff27e589d61.jpg',
-  customBgImageName: 'Akira Redline',
+  selectedBgColor: '#0c0d12',
+  customBgImage: '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp',
+  customBgImageName: 'Chrome Horizon',
   bgOverlayDim: 0,
   bgBlur: 12,
   selectedFontId: 'panchange',
-  selectedPaletteId: 'high-contrast-tech',
+  selectedPaletteId: null, // Neutral default (no color tint)
+  animationEngine: 'fluid',
+  blurBudget: 'rich',
+  animationSpeed: 'fluid',
+  expansionPattern: 'flip',
+  enableContainment: true,
+  liquidGlassMode: 'crystal',
+  refractionIntensity: 'subtle',
+  refractionHeight: 18,
+  edgeStretch: 'subtle',
+  glassDepthProfile: 'realistic3D',
+  glassBlur: 1,
+  glassClarity: 'crystalClear',
+  glassWhiteWash: 0,
+  dataSaverMode: false,
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -423,21 +469,22 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   root.style.setProperty('--glass-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.55)`);
   root.style.setProperty('--glass-bg-elevated', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.72)`);
   root.style.setProperty('--glass-subtle-bg', `rgba(${secRgb.r}, ${secRgb.g}, ${secRgb.b}, 0.16)`);
-  root.style.setProperty('--glass-pill-bg', `rgba(${domRgb.r}, ${domRgb.g}, ${domRgb.b}, 0.58)`);
+  // Always keep pill background strictly neutral dark smoke - never tinted by palette color
+  root.style.setProperty('--glass-pill-bg', 'rgba(16, 18, 24, 0.65)');
   root.style.setProperty('--glass-border', `rgba(255, 255, 255, 0.12)`);
   root.style.setProperty('--glass-border-subtle', `rgba(255, 255, 255, 0.08)`);
   root.style.setProperty('--glass-sheet-bg', `rgba(${Math.max(6, Math.floor(domRgb.r * 0.4))}, ${Math.max(6, Math.floor(domRgb.g * 0.4))}, ${Math.max(8, Math.floor(domRgb.b * 0.4))}, 0.85)`);
 
-  // Set Button & Interaction Tint CSS Variables
-  root.style.setProperty('--btn-primary-bg', accentHex);
-  root.style.setProperty('--btn-primary-text', contrastText);
-  root.style.setProperty('--btn-secondary-bg', `rgba(${secRgb.r}, ${secRgb.g}, ${secRgb.b}, 0.22)`);
-  root.style.setProperty('--btn-secondary-hover', `rgba(${secRgb.r}, ${secRgb.g}, ${secRgb.b}, 0.35)`);
-  root.style.setProperty('--btn-secondary-text', secContrastText === '#ffffff' ? '#ffffff' : '#f1f2f6');
-  root.style.setProperty('--accent-glow', `0 0 24px rgba(${accRgb.r}, ${accRgb.g}, ${accRgb.b}, 0.38)`);
-  root.style.setProperty('--badge-bg', `rgba(${accRgb.r}, ${accRgb.g}, ${accRgb.b}, 0.14)`);
-  root.style.setProperty('--badge-text', accentHex);
-  root.style.setProperty('--badge-border', `rgba(${accRgb.r}, ${accRgb.g}, ${accRgb.b}, 0.25)`);
+  // Set Button & Interaction Tint CSS Variables - strictly preserve neutral white / dark luxury for all buttons
+  root.style.setProperty('--btn-primary-bg', '#ffffff');
+  root.style.setProperty('--btn-primary-text', '#0a0a0c');
+  root.style.setProperty('--btn-secondary-bg', 'rgba(255, 255, 255, 0.08)');
+  root.style.setProperty('--btn-secondary-hover', 'rgba(255, 255, 255, 0.16)');
+  root.style.setProperty('--btn-secondary-text', '#ffffff');
+  root.style.setProperty('--accent-glow', `0 0 24px rgba(255, 255, 255, 0.25)`);
+  root.style.setProperty('--badge-bg', `rgba(255, 255, 255, 0.12)`);
+  root.style.setProperty('--badge-text', '#ffffff');
+  root.style.setProperty('--badge-border', `rgba(255, 255, 255, 0.20)`);
 
   // Apply Background
   if (config.bgMode === 'image' && config.customBgImage) {
@@ -449,17 +496,111 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
     document.body.style.backgroundColor = effectiveBg;
     root.style.setProperty('--app-bg', effectiveBg);
   }
+
+  // Apply Animation Engine & Compositor Attributes
+  const animEngine: AnimationEngineMode = config.animationEngine || 'fluid';
+  const blurBudget: BlurBudgetOption = config.blurBudget || (animEngine === 'compositor' ? 'optimized' : 'rich');
+  const animSpeed: AnimationSpeedOption = config.animationSpeed || (animEngine === 'compositor' ? 'snappy' : 'fluid');
+  const expansionPattern: ExpansionPatternOption = config.expansionPattern || (animEngine === 'compositor' ? 'scaleOrigin' : 'flip');
+  const containment = config.enableContainment ?? true;
+
+  root.setAttribute('data-anim-mode', animEngine);
+  root.setAttribute('data-blur-budget', blurBudget);
+  root.setAttribute('data-anim-speed', animSpeed);
+  root.setAttribute('data-expansion-pattern', expansionPattern);
+  root.setAttribute('data-containment', containment ? 'true' : 'false');
+
+  if (animEngine === 'compositor') {
+    root.style.setProperty('--anim-timing', 'cubic-bezier(0.25, 0.1, 0.25, 1)'); // Exact smooth curve of the ❌ one
+    root.style.setProperty('--anim-duration', animSpeed === 'instant' ? '0.04s' : animSpeed === 'snappy' ? '0.22s' : '0.30s');
+  } else if (animEngine === 'reduced') {
+    root.style.setProperty('--anim-timing', 'linear');
+    root.style.setProperty('--anim-duration', '0.01s');
+  } else {
+    root.style.setProperty('--anim-timing', 'cubic-bezier(0.25, 0.1, 0.25, 1)');
+    root.style.setProperty('--anim-duration', animSpeed === 'instant' ? '0.04s' : animSpeed === 'snappy' ? '0.24s' : '0.30s');
+  }
+
+  // Glass Blur Value (Customizable Blur in Glass)
+  // If user set an explicit glassBlur, prioritize it; otherwise use blurBudget baseline
+  let effectiveGlassBlur = 3;
+  if (typeof config.glassBlur === 'number') {
+    effectiveGlassBlur = Math.max(0, Math.min(40, config.glassBlur));
+  } else if (blurBudget === 'optimized') {
+    effectiveGlassBlur = 6;
+  } else if (blurBudget === 'solid') {
+    effectiveGlassBlur = 0;
+  } else {
+    effectiveGlassBlur = 16;
+  }
+
+  root.style.setProperty('--glass-blur-strength', `${effectiveGlassBlur}px`);
+  root.style.setProperty('--glass-blur-mobile', `${Math.max(0, effectiveGlassBlur - 1)}px`);
+
+  // Glass Clarity & Whiteness Wash (Anti-Milkiness / Real Glass Physics)
+  // Explaining & solving "why it was whitish instead of glass like":
+  // Real physical glass has almost 0% white body fill—its visual presence comes from
+  // light refraction, Snell-law bending, specular rim arcs, and caustics.
+  // Standard web glassmorphism recipes stack 8-15% white, which when blurred turns
+  // into a milky white opaque fog.
+  const whiteWashPercent = typeof config.glassWhiteWash === 'number'
+    ? Math.max(0, Math.min(25, config.glassWhiteWash))
+    : (config.glassClarity === 'crystalClear' ? 1.5 : config.glassClarity === 'natural' ? 3.5 : config.glassClarity === 'milkyFrosted' ? 14 : 7);
+  
+  const whiteWashAlpha = whiteWashPercent / 100;
+  root.style.setProperty('--glass-white-wash', `${whiteWashAlpha.toFixed(4)}`);
+  root.style.setProperty('--glass-sheen-top', `${(whiteWashAlpha * 1.5 + 0.03).toFixed(4)}`);
+  root.style.setProperty('--glass-border-alpha', `${(Math.min(0.40, whiteWashAlpha * 1.4 + 0.12)).toFixed(4)}`);
+  root.style.setProperty('--glass-specular-alpha', `${(Math.min(0.85, 0.45 + whiteWashAlpha * 1.5)).toFixed(4)}`);
+
+  // Optical Liquid Glass Refraction Engine & 3D Depth
+  const liquidGlassMode: LiquidGlassMode = config.liquidGlassMode || 'crystal';
+  const refractionIntensity: LiquidRefractionIntensity = config.refractionIntensity || 'medium';
+  const edgeStretch: EdgeStretchOption = config.edgeStretch || 'subtle';
+  const glassDepthProfile: GlassDepthProfile = config.glassDepthProfile || 'realistic3D';
+  const refractionHeight = config.refractionHeight ?? 18;
+
+  root.setAttribute('data-liquid-glass', liquidGlassMode);
+  root.setAttribute('data-refraction-intensity', refractionIntensity);
+  root.setAttribute('data-refraction-height', String(refractionHeight));
+  root.setAttribute('data-edge-stretch', edgeStretch);
+  root.setAttribute('data-glass-depth', glassDepthProfile);
+  root.setAttribute('data-glass-clarity', config.glassClarity || 'crystalClear');
+
+  // Update dynamic displacement filter scale directly
+  const dynamicMap = document.getElementById('liquid-glass-dynamic-map');
+  if (dynamicMap) {
+    dynamicMap.setAttribute('scale', String(refractionHeight));
+  }
+
+  if (liquidGlassMode === 'off' || liquidGlassMode === 'blur' || liquidGlassMode === 'opaque') {
+    root.style.setProperty('--liquid-filter-url', 'none');
+  } else if (refractionHeight === 0) {
+    root.style.setProperty('--liquid-filter-url', 'none');
+  } else {
+    root.style.setProperty('--liquid-filter-url', 'url(#liquid-glass-dynamic)');
+  }
 }
 
-const THEME_VERSION_KEY = 'refra_theme_ver_akira_redline_cyber_tech';
+const THEME_VERSION_KEY = 'refra_theme_ver_v10_chrome_horizon';
 
 export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
   try {
     const isUpgraded = localStorage.getItem(THEME_VERSION_KEY);
     if (!isUpgraded) {
       localStorage.setItem(THEME_VERSION_KEY, 'true');
-      await saveThemeConfig(DEFAULT_THEME_CONFIG);
-      return DEFAULT_THEME_CONFIG;
+      const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
+      const fromLocal = localStorage.getItem('refra_ui_theme_config');
+      const base = fromIdb || (fromLocal ? JSON.parse(fromLocal) : DEFAULT_THEME_CONFIG);
+      const updated: UiThemeConfig = {
+        ...DEFAULT_THEME_CONFIG,
+        ...base,
+        bgMode: 'image',
+        customBgImage: '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp',
+        customBgImageName: 'Chrome Horizon',
+      };
+      await saveThemeConfig(updated);
+      return updated;
     }
 
     const fromIdb = await getIndexedDbSetting<UiThemeConfig>('ui_theme_config', DEFAULT_THEME_CONFIG);
@@ -482,3 +623,47 @@ export async function saveThemeConfig(config: UiThemeConfig): Promise<void> {
     console.warn('Save theme config notice:', err);
   }
 }
+
+/**
+ * Detects if the user's OS or browser has requested data saving via Network Information API
+ */
+export function isSystemSaveDataDetected(): boolean {
+  if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+    const conn = (navigator as any).connection;
+    return Boolean(conn && (conn.saveData === true || conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g'));
+  }
+  return false;
+}
+
+/**
+ * Synchronously checks if Data Saver mode is active (from user preferences or system network constraint)
+ */
+export function isDataSaverActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('refra_ui_theme_config');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      if (typeof cfg.dataSaverMode === 'boolean') {
+        return cfg.dataSaverMode;
+      }
+    }
+  } catch {
+    // Ignore JSON errors
+  }
+  return isSystemSaveDataDetected();
+}
+
+/**
+ * Toggles or explicitly sets Data Saver mode
+ */
+export async function setDataSaverMode(enabled: boolean): Promise<UiThemeConfig> {
+  const current = await loadSavedThemeConfig();
+  const updated: UiThemeConfig = {
+    ...current,
+    dataSaverMode: enabled,
+  };
+  await saveThemeConfig(updated);
+  return updated;
+}
+

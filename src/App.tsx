@@ -6,10 +6,13 @@ import { MovieRow } from './components/MovieRow';
 import { MovieDetailsModal } from './components/MovieDetailsModal';
 import { VideoPlayerModal } from './components/VideoPlayerModal';
 import { StreamServerSelectorModal } from './components/StreamServerSelectorModal';
+import { CastModal, CastDevice } from './components/CastModal';
+import { NotificationsModal } from './components/NotificationsModal';
 import { BottomNav } from './components/BottomNav';
 import { WatchlistView } from './components/WatchlistView';
 import { ExploreView } from './components/ExploreView';
 import { ProfileView } from './components/ProfileView';
+import { SearchView } from './components/SearchView';
 import { FALLBACK_MOVIES } from './data/movies';
 import {
   fetchSpotlightMovies,
@@ -105,10 +108,18 @@ export default function App() {
   const [autoPlayDetails, setAutoPlayDetails] = useState(false);
   const [serverSelectorMovie, setServerSelectorMovie] = useState<Movie | null>(null);
   const [serverSelectorEpisodeIndex, setServerSelectorEpisodeIndex] = useState<number>(0);
+
+  // Cast & Notifications modal state
+  const [isCastOpen, setIsCastOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isCastConnected, setIsCastConnected] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<CastDevice | null>(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(3);
   const [selectedStream, setSelectedStream] = useState<StreamItem | null>(null);
 
   // Dynamic UI Theme & Background State
   const [themeConfig, setThemeConfig] = useState<UiThemeConfig>(DEFAULT_THEME_CONFIG);
+  const [searchThemeColor, setSearchThemeColor] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -132,10 +143,10 @@ export default function App() {
 
   // Guarantee page scrolling is never locked when all modals are closed
   useEffect(() => {
-    if (!selectedMovie && !playingMovie && !serverSelectorMovie) {
+    if (!selectedMovie && !playingMovie && !serverSelectorMovie && !isCastOpen && !isNotificationsOpen) {
       forceUnlockScroll();
     }
-  }, [selectedMovie, playingMovie, serverSelectorMovie]);
+  }, [selectedMovie, playingMovie, serverSelectorMovie, isCastOpen, isNotificationsOpen]);
 
   const handleThemeChange = (newConfig: UiThemeConfig) => {
     setThemeConfig(newConfig);
@@ -522,6 +533,37 @@ export default function App() {
     setThrillerMovies(updater);
   };
 
+  // Open movie details directly by TMDB or custom ID
+  const handleOpenDetailsById = async (movieId: string) => {
+    const allCurrentMovies = [
+      ...spotlightMovies,
+      ...trendingMovies,
+      ...animeMovies,
+      ...topRatedMovies,
+      ...scifiMovies,
+      ...actionMovies,
+      ...thrillerMovies,
+      ...FALLBACK_MOVIES,
+    ];
+    let found = allCurrentMovies.find(
+      (m) => m.id === movieId || m.id === `tmdb_${movieId}` || String(m.tmdbId) === movieId
+    );
+    if (!found) {
+      try {
+        const cleanId = movieId.replace('tmdb_', '');
+        const res = await fetch(`/api/movies/${cleanId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.movie) found = data.movie;
+        }
+      } catch {}
+    }
+    if (found) {
+      setSelectedMovie(found);
+      setAutoPlayDetails(true);
+    }
+  };
+
   const handleOpenDetails = (movie: Movie, origin?: DOMRect | ExpansionOrigin) => {
     trackMediaView({
       id: movie.id,
@@ -562,23 +604,24 @@ export default function App() {
   }, [watchlist, allMoviesMap]);
 
   const isCustomImageActive = themeConfig.bgMode === 'image' && Boolean(themeConfig.customBgImage);
-  const activeBgColor = isCustomImageActive ? '#060606' : (themeConfig.selectedBgColor || '#0c0d10');
+  const baseBgColor = isCustomImageActive ? '#060606' : (themeConfig.selectedBgColor || '#0c0d10');
+  const activeBgColor = activeTab === 'search' && searchThemeColor ? searchThemeColor : baseBgColor;
 
   return (
     <div
-      className="min-h-screen text-[#f0f2f5] flex justify-center antialiased selection:bg-neutral-800 selection:text-white relative"
+      className="min-h-screen text-[#f0f2f5] flex justify-center antialiased selection:bg-neutral-800 selection:text-white relative transition-colors duration-700"
       style={{ backgroundColor: activeBgColor }}
     >
       {/* Dynamic Device Wallpaper Layer (when enabled) */}
       {isCustomImageActive && themeConfig.customBgImage && (
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
           <div
-            className="w-full h-full bg-cover bg-center bg-no-repeat transition-all duration-500"
+            className="w-full h-full bg-cover bg-center bg-no-repeat transition-[transform] duration-500"
             style={{
               backgroundImage: `url(${themeConfig.customBgImage})`,
               filter: `blur(${themeConfig.bgBlur || 0}px)`,
               transform: (themeConfig.bgBlur || 0) > 0 ? 'scale(1.06)' : 'scale(1)',
-              willChange: 'filter, transform',
+              willChange: 'transform',
             }}
           />
           {/* Dimming Scrim for Readability */}
@@ -599,8 +642,24 @@ export default function App() {
           backgroundColor: isCustomImageActive ? 'transparent' : activeBgColor,
         }}
       >
-        {/* Floating Combined Action Pill (Notification + Cast) - only appears in homepage */}
-        {activeTab === 'home' && <Navbar />}
+        {/* Floating Combined Action Pill (Notification + Cast) */}
+        {(activeTab === 'home' || activeTab === 'explore') && (
+          <Navbar
+            onOpenCast={() => {
+              setIsCastOpen((prev) => !prev);
+              setIsNotificationsOpen(false);
+            }}
+            onOpenNotifications={() => {
+              setIsNotificationsOpen((prev) => !prev);
+              setIsCastOpen(false);
+            }}
+            isCastOpen={isCastOpen}
+            isNotificationsOpen={isNotificationsOpen}
+            isCastConnected={isCastConnected}
+            connectedDeviceName={connectedDevice?.name}
+            unreadCount={unreadNotifCount}
+          />
+        )}
 
         {/* Tab View Content */}
         <div className="flex-1 pb-28 pt-1">
@@ -704,119 +763,13 @@ export default function App() {
           )}
 
           {activeTab === 'search' && (
-            <div className="px-4 py-3 space-y-4">
-              <div className="flex items-center gap-2.5 bg-[#14161f] rounded-full px-4 py-3 border border-white/5">
-                <Search className="w-4 h-4 text-neutral-400 shrink-0" />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Search titles, directors, actors..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none"
-                />
-              </div>
-
-              {!searchQuery && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                    Popular Searches
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {['Dune', 'Oppenheimer', 'Blade Runner', 'Interstellar', 'The Batman', 'Sci-Fi'].map(
-                      (term) => (
-                        <button
-                          key={term}
-                          type="button"
-                          onClick={() => setSearchQuery(term)}
-                          className="px-3 py-1.5 rounded-full text-xs liquid-glass text-neutral-300 hover:text-white transition-colors"
-                        >
-                          {term}
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Live search results: Direct Canvas Overlays */}
-              {searchQuery && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs text-neutral-400">
-                    <span>Search results for "{searchQuery}"</span>
-                    {isSearching ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400" />
-                    ) : (
-                      <span>{searchResults.length} found</span>
-                    )}
-                  </div>
-
-                  {searchResults.length === 0 && !isSearching ? (
-                    <div className="py-12 text-center text-sm text-neutral-400">
-                      No movies found matching "{searchQuery}".
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {searchResults.map((movie) => {
-                        const isSaved = watchlist.includes(movie.id);
-                        return (
-                          <motion.div
-                            key={movie.id}
-                            whileTap={{ scale: 0.94 }}
-                            transition={{ type: 'spring', stiffness: 350, damping: 22, mass: 0.7 }}
-                            onClick={(e) => handleOpenDetails(movie, e.currentTarget.getBoundingClientRect())}
-                            className="aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer will-change-transform"
-                          >
-                            <img
-                              src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
-                              alt={movie.title}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
-                            />
-
-                            {/* Canvas gradient overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
-                            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
-
-                            {/* Top bookmark button */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleWatchlist(movie.id);
-                              }}
-                              className="absolute top-2 right-2 p-1.5 rounded-full liquid-glass text-white hover:bg-white/20 shadow-md transition-colors z-10"
-                              aria-label={isSaved ? 'Remove from watchlist' : 'Add to watchlist'}
-                            >
-                              {isSaved ? (
-                                <Check className="w-3.5 h-3.5 text-neutral-200" />
-                              ) : (
-                                <Plus className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-
-                            {/* Text directly on canvas (No separate nested black box) */}
-                            <div className="absolute inset-x-0 bottom-0 p-2.5 z-10 flex flex-col gap-0.5 pointer-events-none">
-                              <h4 className="text-xs font-semibold text-white truncate leading-tight drop-shadow-sm">
-                                {movie.title}
-                              </h4>
-                              <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mt-0.5">
-                                <span className="flex items-center gap-1 font-medium text-white">
-                                  <Star className="w-2.5 h-2.5 fill-white text-white" />
-                                  {movie.score}
-                                </span>
-                                <span className="text-neutral-500">•</span>
-                                <span className="text-neutral-300 font-light">{movie.releaseYear}</span>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <SearchView
+              watchlist={watchlist}
+              onToggleWatchlist={toggleWatchlist}
+              onMovieClick={handleOpenDetails}
+              initialQuery={searchQuery}
+              onThemeColorChange={setSearchThemeColor}
+            />
           )}
 
           {activeTab === 'watchlist' && (
@@ -860,6 +813,36 @@ export default function App() {
           onToggleWatchlist={toggleWatchlist}
           autoPlay={autoPlayDetails}
           onPlayMovie={handlePlayMovie}
+          onSearchQuery={(q) => {
+            setSearchQuery(q);
+            setActiveTab('search');
+            setSelectedMovie(null);
+          }}
+        />
+
+        {/* Cast & Remote Playback Modal */}
+        <CastModal
+          isOpen={isCastOpen}
+          onClose={() => setIsCastOpen(false)}
+          activeMovie={playingMovie || selectedMovie}
+          isCastConnected={isCastConnected}
+          connectedDeviceName={connectedDevice?.name || null}
+          onConnectDevice={(dev) => {
+            setConnectedDevice(dev);
+            setIsCastConnected(true);
+          }}
+          onDisconnectDevice={() => {
+            setConnectedDevice(null);
+            setIsCastConnected(false);
+          }}
+        />
+
+        {/* Cinema Notifications Center */}
+        <NotificationsModal
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
+          onSelectMovieById={handleOpenDetailsById}
+          onUnreadCountChange={setUnreadNotifCount}
         />
 
         {/* Stremio Addons Server Hub (PenguPlay, Torrentio, Comet, AIOStreams, Nuvio) */}

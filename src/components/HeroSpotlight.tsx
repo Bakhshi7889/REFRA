@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Image as ImageIcon, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, getBackdropUrl, handleImageError } from '../utils/imageHelpers';
+import { isDataSaverActive } from '../services/themeStore';
 
 interface HeroSpotlightProps {
   movies: Movie[];
@@ -21,6 +22,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   onToggleWatchlist,
   isActive = true,
 }) => {
+  const isDataSaver = isDataSaverActive();
   const spotlightMovies = useMemo(
     () => movies.filter((m) => m.spotlight || m.featured).slice(0, 6),
     [movies]
@@ -50,38 +52,34 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
   // Responsive images: portrait for mobile (2:3), landscape for PC/desktop (16:9)
   const portraitImages = useMemo(() => {
+    const targetSize = isDataSaver ? 'w185' : 'w342';
     return (activeMovie?.posters && activeMovie.posters.length > 0)
-      ? activeMovie.posters.map((p) => getPosterUrl(p, 'w780', activeMovie.backdropUrl))
-      : [getPosterUrl(activeMovie?.posterUrl, 'w780', activeMovie?.backdropUrl)].filter(Boolean);
-  }, [activeMovie]);
+      ? activeMovie.posters.map((p) => getPosterUrl(p, targetSize, activeMovie.backdropUrl))
+      : [getPosterUrl(activeMovie?.posterUrl, targetSize, activeMovie?.backdropUrl)].filter(Boolean);
+  }, [activeMovie, isDataSaver]);
 
   const landscapeImages = useMemo(() => {
+    const targetSize = isDataSaver ? 'w780' : 'w780';
     return [
       activeMovie?.backdropUrl,
       ...(activeMovie?.backdrops || []),
       ...(activeMovie?.fanart || []),
     ]
       .filter(Boolean)
-      .map((b) => getBackdropUrl(b, 'w1280', activeMovie?.posterUrl));
-  }, [activeMovie]);
+      .map((b) => getBackdropUrl(b, targetSize, activeMovie?.posterUrl));
+  }, [activeMovie, isDataSaver]);
 
   const activeImageList = isMobile ? portraitImages : landscapeImages;
   const currentImageUrl =
     activeImageList[activeBackdropIdx % (activeImageList.length || 1)] ||
     (isMobile
-      ? getPosterUrl(activeMovie?.posterUrl, 'w780', activeMovie?.backdropUrl)
-      : getBackdropUrl(activeMovie?.backdropUrl, 'w1280', activeMovie?.posterUrl));
+      ? getPosterUrl(activeMovie?.posterUrl, isDataSaver ? 'w185' : 'w342', activeMovie?.backdropUrl)
+      : getBackdropUrl(activeMovie?.backdropUrl, isDataSaver ? 'w780' : 'w780', activeMovie?.posterUrl));
 
-  // 1. Cycle through artwork every 5 seconds (only when active and tab is visible)
-  useEffect(() => {
-    if (!isActive || activeImageList.length <= 1) return;
-    const artTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      setActiveBackdropIdx((prev) => (prev + 1) % activeImageList.length);
-    }, 5000);
-
-    return () => clearInterval(artTimer);
-  }, [isActive, activeMovie?.id, activeImageList.length]);
+  // 1. Artwork cycling:
+  // Strictly disabled in Data Saver mode to save bandwidth.
+  // In normal mode: no auto-cycling across backdrops to prevent continuous background downloads;
+  // users can manually navigate using dots or arrows.
 
   const handleNext = () => {
     if (spotlightMovies.length <= 1) return;
@@ -95,16 +93,17 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
     setActiveBackdropIdx(0);
   };
 
-  // 2. Switch to different movie every 15 seconds (only when active and tab is visible)
+  // 2. Movie auto-cycling:
+  // Disabled in Data Saver mode. In normal mode, cycles calmly every 25s (paused when document is hidden)
   useEffect(() => {
-    if (!isActive || spotlightMovies.length <= 1) return;
+    if (isDataSaver || !isActive || spotlightMovies.length <= 1) return;
     const movieTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       handleNext();
-    }, 15000);
+    }, 25000);
 
     return () => clearInterval(movieTimer);
-  }, [isActive, spotlightMovies.length, currentIndex]);
+  }, [isActive, spotlightMovies.length, currentIndex, isDataSaver]);
 
   // PC Mouse Wheel Scrolling for Hero Spotlight
   useEffect(() => {
@@ -175,31 +174,43 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             onOpenDetails(activeMovie);
           }
         }}
-        className="relative w-full rounded-3xl overflow-hidden bg-[#13151b] aspect-[3.5/5] sm:aspect-[16/9] shadow-2xl cursor-pointer group"
+        className="relative w-full rounded-3xl overflow-hidden bg-[#0c0d10] aspect-[9/16] max-h-[82dvh] sm:max-h-none sm:aspect-[16/9] shadow-2xl cursor-pointer group"
       >
-        {/* Visual Crossfade (Portrait on mobile, Landscape on PC) */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${activeMovie.id}-${isMobile ? 'mob' : 'pc'}-${activeBackdropIdx}`}
-            initial={{ opacity: 0, scale: 1.04 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-0"
-          >
-            <img
-              src={currentImageUrl}
-              alt={activeMovie.title}
-              referrerPolicy="no-referrer"
-              onError={(e) => handleImageError(e, !isMobile)}
-              className="w-full h-full object-cover object-center pointer-events-none"
-            />
-          </motion.div>
-        </AnimatePresence>
+        {/* Full-Bleed Artwork Occupying the Whole Area */}
+        <div className="absolute inset-0 overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${activeMovie.id}-${currentImageUrl}`}
+              initial={{ opacity: 0, scale: 1.02 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute inset-0 w-full h-full"
+            >
+              {/* Adaptive Ambient Blur Layer for Depth */}
+              <img
+                src={currentImageUrl}
+                alt=""
+                aria-hidden="true"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50 brightness-[0.65] pointer-events-none transform-gpu"
+              />
 
-        {/* Seamless Canvas Gradient Vignette */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/45 to-transparent pointer-events-none" />
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/75 to-transparent pointer-events-none" />
+              {/* Crisp Foreground Artwork Occupying the Whole Area */}
+              <img
+                src={currentImageUrl}
+                alt={activeMovie.title}
+                referrerPolicy="no-referrer"
+                onError={(e) => handleImageError(e, !isMobile)}
+                className="relative z-10 w-full h-full object-cover object-center sm:object-cover sm:object-center drop-shadow-2xl"
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Cinematic Vignette Gradients */}
+        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#0c0d10]/75 via-[#0c0d10]/20 to-transparent pointer-events-none z-15" />
+        <div className="absolute inset-x-0 bottom-0 h-52 sm:h-60 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/80 via-45% to-transparent pointer-events-none z-15" />
 
         {/* Desktop Next and Back Navigation Buttons */}
         {spotlightMovies.length > 1 && (
@@ -230,9 +241,9 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
           </>
         )}
 
-        {/* Top Controls: Artwork Switcher without surrounding lines */}
+        {/* Top Controls: Artwork Switcher */}
         {activeImageList.length > 1 && (
-          <div className="absolute top-3 right-3 pointer-events-auto z-20">
+          <div className="absolute top-3 left-3 sm:left-auto sm:right-3 pointer-events-auto z-25">
             <button
               type="button"
               onClick={(e) => {
@@ -248,21 +259,44 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
           </div>
         )}
 
-        {/* ALL TEXT & CONTROLS DIRECTLY ON THE CANVAS (NO SEPARATE BLACK BOX) */}
-        <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-10 z-20 flex flex-col gap-2.5 pointer-events-auto">
-          {/* Movie Title directly on canvas */}
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate">
-            {activeMovie.title}
-          </h2>
+        {/* All Text & Controls directly on the Canvas */}
+        <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-6 z-20 flex flex-col gap-2.5 pointer-events-auto sm:px-8 sm:pb-8 sm:pt-8">
+          {/* TMDB Clearlogo PNG or Title */}
+          {activeMovie.logoUrl ? (
+            <div className="flex items-center justify-center sm:justify-start max-h-12 sm:max-h-18 py-0.5">
+              <img
+                src={activeMovie.logoUrl}
+                alt={activeMovie.title}
+                referrerPolicy="no-referrer"
+                className="max-h-9 sm:max-h-14 max-w-[70%] sm:max-w-[45%] object-contain object-center sm:object-left drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)]"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                  const fallback = document.getElementById(`fallback-title-${activeMovie.id}`);
+                  if (fallback) fallback.style.display = 'block';
+                }}
+              />
+              <h2
+                id={`fallback-title-${activeMovie.id}`}
+                style={{ display: 'none' }}
+                className="text-xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate text-center sm:text-left"
+              >
+                {activeMovie.title}
+              </h2>
+            </div>
+          ) : (
+            <h2 className="text-xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate text-center sm:text-left">
+              {activeMovie.title}
+            </h2>
+          )}
 
           {/* Action Buttons directly on canvas */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex items-center justify-center sm:justify-start gap-2 pt-0.5">
             <motion.button
               whileTap={{ scale: 0.96 }}
               whileHover={{ scale: 1.02 }}
               type="button"
               onClick={() => onPlay(activeMovie)}
-              className="flex-1 py-3 px-4 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-xl transition-colors min-h-[44px] cursor-pointer"
+              className="flex-1 sm:flex-none sm:min-w-[140px] py-3 px-5 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-xl transition-colors min-h-[44px] cursor-pointer"
             >
               <motion.div
                 whileHover={{ scale: 1.15, x: 1 }}
@@ -277,7 +311,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               whileTap={{ scale: 0.96 }}
               type="button"
               onClick={() => onToggleWatchlist(activeMovie.id)}
-              className={`p-3 rounded-2xl flex items-center justify-center transition-all min-h-[44px] min-w-[44px] shadow-lg cursor-pointer ${
+              className={`p-3 rounded-2xl flex items-center justify-center transition-colors duration-200 min-h-[44px] min-w-[44px] shadow-lg cursor-pointer ${
                 isSaved
                   ? 'bg-neutral-200 text-neutral-950'
                   : 'liquid-glass hover:bg-white/20 text-white'
