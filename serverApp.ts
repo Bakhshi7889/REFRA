@@ -438,7 +438,7 @@ app.use((req, res, next) => {
       const enLogo =
         details.images.logos.find((l: any) => l.iso_639_1 === 'en') ||
         details.images.logos.find((l: any) => !l.iso_639_1) ||
-        details.images.logos[0];
+        [...details.images.logos].sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0))[0];
       if (enLogo?.file_path) {
         logoUrl = `https://image.tmdb.org/t/p/w500${enLogo.file_path}`;
       }

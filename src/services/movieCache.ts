@@ -10,8 +10,8 @@ export interface CachedCatalog {
   animeMovies: Movie[];
   topRatedMovies: Movie[];
   scifiMovies: Movie[];
-  actionMovies: Movie[];
-  thrillerMovies: Movie[];
+  actionMovies?: Movie[];
+  thrillerMovies?: Movie[];
   indiaTrending?: Movie[];
   bollywoodMovies?: Movie[];
   southMovies?: Movie[];
@@ -43,6 +43,9 @@ export function areMovieListsDifferent(current?: Movie[], incoming?: Movie[]): b
     if (cur.id !== inc.id) return true;
     if (cur.score !== inc.score) return true;
     if (cur.title !== inc.title) return true;
+    if (cur.logoUrl !== inc.logoUrl) return true;
+    if (cur.posterUrl !== inc.posterUrl) return true;
+    if (cur.backdropUrl !== inc.backdropUrl) return true;
   }
   return false;
 }

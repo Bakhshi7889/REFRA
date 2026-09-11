@@ -515,7 +515,8 @@ async function directFetchAniList(perPage = 16): Promise<Movie[]> {
 // ---------------- PUBLIC EXPORTED FUNCTIONS ----------------
 
 export async function fetchSpotlightMovies(regionOverride?: string): Promise<Movie[]> {
-  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
   const cacheKey = `spotlight_${region || 'global'}`;
 
   return swrFetch(cacheKey, async () => {
@@ -545,12 +546,13 @@ export async function fetchSpotlightMovies(regionOverride?: string): Promise<Mov
           top5.map(async (movie) => {
             if (movie.logoUrl || !movie.tmdbId) return movie;
             try {
-              const imgData = await directFetchTmdbRaw(`movie/${movie.tmdbId}/images?include_image_language=en,null`);
+              const isTv = movie.id?.includes('tv') || movie.mediaType === 'tv';
+              const imgData = await directFetchTmdbRaw(`${isTv ? 'tv' : 'movie'}/${movie.tmdbId}/images`);
               if (imgData?.logos && imgData.logos.length > 0) {
                 const enLogo =
                   imgData.logos.find((l: any) => l.iso_639_1 === 'en') ||
                   imgData.logos.find((l: any) => !l.iso_639_1) ||
-                  imgData.logos[0];
+                  [...imgData.logos].sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0))[0];
                 if (enLogo?.file_path) {
                   return {
                     ...movie,
@@ -575,7 +577,8 @@ export async function fetchSpotlightMovies(regionOverride?: string): Promise<Mov
 }
 
 export async function fetchTrendingMovies(regionOverride?: string): Promise<Movie[]> {
-  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
   const cacheKey = `trending_${region || 'global'}`;
 
   return swrFetch(cacheKey, async () => {
@@ -606,7 +609,8 @@ export async function fetchTrendingMovies(regionOverride?: string): Promise<Movi
 }
 
 export async function fetchTopRatedMovies(regionOverride?: string): Promise<Movie[]> {
-  const region = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
+  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
   const cacheKey = `top_rated_${region || 'global'}`;
 
   return swrFetch(cacheKey, async () => {

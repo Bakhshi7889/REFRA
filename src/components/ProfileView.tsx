@@ -42,6 +42,7 @@ import {
 } from '../services/indexedDb';
 import { loginTraktUser, fetchTraktRemoteWatchlist } from '../services/traktApi';
 import { ThemeSettingsSection } from './ThemeSettingsSection';
+import { ImageDiagnosticsSection } from './ImageDiagnosticsSection';
 import { UiThemeConfig, DEFAULT_THEME_CONFIG, loadSavedThemeConfig, saveThemeConfig } from '../services/themeStore';
 import { getUserRegionInfo, setUserRegion, SUPPORTED_REGIONS } from '../services/regionStore';
 import { toWebpUrl } from '../utils/imageHelpers';
@@ -677,6 +678,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* ================= IMAGE ROUTING & NETWORK DIAGNOSTICS ================= */}
+      <ImageDiagnosticsSection
+        activeThemeConfig={activeThemeConfig}
+        onThemeChange={handleThemeChange}
+        showToast={showToast}
+      />
 
       {/* ================= SECTION 4: REAL INDEXEDDB DATABASE & STORAGE ================= */}
       <div className="space-y-2">

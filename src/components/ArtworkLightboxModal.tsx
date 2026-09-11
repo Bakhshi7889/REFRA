@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Download, ChevronLeft, ChevronRight, Check, Maximize2 } from 'lucide-react';
+import { handleImageError } from '../utils/imageHelpers';
 
 interface ArtworkLightboxModalProps {
   isOpen: boolean;
@@ -120,6 +121,7 @@ export const ArtworkLightboxModal: React.FC<ArtworkLightboxModalProps> = ({
           <img
             src={currentArt}
             alt=""
+            onError={(e) => handleImageError(e, !isPoster)}
             className="w-full h-full object-cover filter blur-3xl scale-125"
           />
         </div>
@@ -185,6 +187,7 @@ export const ArtworkLightboxModal: React.FC<ArtworkLightboxModalProps> = ({
             <img
               src={currentArt}
               alt={`${movieTitle} ${type}`}
+              onError={(e) => handleImageError(e, !isPoster)}
               className="w-full h-full object-contain pointer-events-auto"
             />
           </motion.div>

@@ -22,8 +22,6 @@ import {
   fetchTopRatedMovies,
   fetchAnimeMovies,
   fetchSciFiMovies,
-  fetchActionMovies,
-  fetchThrillersMovies,
   fetchIndiaTrending,
   fetchBollywoodMovies,
   fetchSouthIndianMovies,
@@ -97,20 +95,8 @@ export default function App() {
       cachedData?.scifiMovies ||
       FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'))
   );
-  const [actionMovies, setActionMovies] = useState<Movie[]>(
-    () =>
-      cachedData?.actionMovies ||
-      FALLBACK_MOVIES.filter((m) => m.genres.includes('Action'))
-  );
-  const [thrillerMovies, setThrillerMovies] = useState<Movie[]>(
-    () =>
-      cachedData?.thrillerMovies ||
-      FALLBACK_MOVIES.filter(
-        (m) => m.genres.includes('Thriller') || m.genres.includes('Drama')
-      )
-  );
 
-  const [userRegion, setUserRegionState] = useState<string>(() => getUserRegion() || 'US');
+  const [userRegion, setUserRegionState] = useState<string>(() => getUserRegionInfo()?.code || 'GLOBAL');
   const [indiaTrending, setIndiaTrending] = useState<Movie[]>(() => cachedData?.indiaTrending || []);
   const [bollywoodMovies, setBollywoodMovies] = useState<Movie[]>(() => cachedData?.bollywoodMovies || []);
   const [southMovies, setSouthMovies] = useState<Movie[]>(() => cachedData?.southMovies || []);
@@ -234,8 +220,6 @@ export default function App() {
         if (dbCatalog.animeMovies?.length) setAnimeMovies(dbCatalog.animeMovies);
         if (dbCatalog.topRatedMovies?.length) setTopRatedMovies(dbCatalog.topRatedMovies);
         if (dbCatalog.scifiMovies?.length) setScifiMovies(dbCatalog.scifiMovies);
-        if (dbCatalog.actionMovies?.length) setActionMovies(dbCatalog.actionMovies);
-        if (dbCatalog.thrillerMovies?.length) setThrillerMovies(dbCatalog.thrillerMovies);
         if (dbCatalog.indiaTrending?.length) setIndiaTrending(dbCatalog.indiaTrending);
         if (dbCatalog.bollywoodMovies?.length) setBollywoodMovies(dbCatalog.bollywoodMovies);
         if (dbCatalog.southMovies?.length) setSouthMovies(dbCatalog.southMovies);
@@ -245,14 +229,12 @@ export default function App() {
 
     async function loadData() {
       try {
-        const [spotlights, trending, anime, topRated, scifi, action, thrillers] = await Promise.all([
+        const [spotlights, trending, anime, topRated, scifi] = await Promise.all([
           fetchSpotlightMovies(),
           fetchTrendingMovies(),
           fetchAnimeMovies(),
           fetchTopRatedMovies(),
           fetchSciFiMovies(),
-          fetchActionMovies(),
-          fetchThrillersMovies(),
         ]);
 
         if (isMounted) {
@@ -298,22 +280,6 @@ export default function App() {
             return prev;
           });
 
-          setActionMovies((prev) => {
-            if (action.length > 0 && areMovieListsDifferent(prev, action)) {
-              hasChanges = true;
-              return action;
-            }
-            return prev;
-          });
-
-          setThrillerMovies((prev) => {
-            if (thrillers.length > 0 && areMovieListsDifferent(prev, thrillers)) {
-              hasChanges = true;
-              return thrillers;
-            }
-            return prev;
-          });
-
           // Save to 6-hour cache (IndexedDB + localStorage) if new items arrived
           if (hasChanges || !cachedData) {
             save6HourCache({
@@ -322,8 +288,6 @@ export default function App() {
               animeMovies: anime.length > 0 ? anime : animeMovies,
               topRatedMovies: topRated.length > 0 ? topRated : topRatedMovies,
               scifiMovies: scifi.length > 0 ? scifi : scifiMovies,
-              actionMovies: action.length > 0 ? action : actionMovies,
-              thrillerMovies: thrillers.length > 0 ? thrillers : thrillerMovies,
               indiaTrending,
               bollywoodMovies,
               southMovies,
@@ -370,8 +334,6 @@ export default function App() {
               animeMovies,
               topRatedMovies,
               scifiMovies,
-              actionMovies,
-              thrillerMovies,
               indiaTrending: inTrend?.length > 0 ? inTrend : indiaTrending,
               bollywoodMovies: inBolly?.length > 0 ? inBolly : bollywoodMovies,
               southMovies: inSouth?.length > 0 ? inSouth : southMovies,
@@ -386,7 +348,7 @@ export default function App() {
 
     // Initialize auto-detected region and save if not already set
     const currentRegionInfo = getUserRegionInfo();
-    const activeReg = currentRegionInfo?.code || getUserRegion() || 'US';
+    const activeReg = currentRegionInfo?.code || 'GLOBAL';
     setUserRegionState(activeReg);
 
     loadData();
@@ -396,7 +358,8 @@ export default function App() {
 
     const handleRegionChanged = async () => {
       clearMovieApiCache();
-      const updatedReg = getUserRegion() || 'US';
+      const regionInfo = getUserRegionInfo();
+      const updatedReg = regionInfo?.code || 'GLOBAL';
       setUserRegionState(updatedReg);
       try {
         const [spotlights, trending, topRated] = await Promise.all([
@@ -422,11 +385,22 @@ export default function App() {
       }
     };
 
+    const handleCatalogRefresh = async () => {
+      clearMovieApiCache();
+      loadData();
+      const currentRegionInfo = getUserRegionInfo();
+      if (currentRegionInfo?.code === 'IN') {
+        loadIndiaData();
+      }
+    };
+
     window.addEventListener('refra_region_changed', handleRegionChanged);
+    window.addEventListener('refra_refresh_catalog', handleCatalogRefresh);
 
     return () => {
       isMounted = false;
       window.removeEventListener('refra_region_changed', handleRegionChanged);
+      window.removeEventListener('refra_refresh_catalog', handleCatalogRefresh);
     };
   }, []);
 
@@ -443,8 +417,6 @@ export default function App() {
       ...animeMovies,
       ...topRatedMovies,
       ...scifiMovies,
-      ...actionMovies,
-      ...thrillerMovies,
       ...indiaTrending,
       ...bollywoodMovies,
       ...southMovies,
@@ -465,8 +437,6 @@ export default function App() {
     animeMovies,
     topRatedMovies,
     scifiMovies,
-    actionMovies,
-    thrillerMovies,
     indiaTrending,
     bollywoodMovies,
     southMovies,
@@ -511,8 +481,6 @@ export default function App() {
       ...animeMovies,
       ...topRatedMovies,
       ...scifiMovies,
-      ...actionMovies,
-      ...thrillerMovies,
       ...indiaTrending,
       ...bollywoodMovies,
       ...southMovies,
@@ -528,8 +496,6 @@ export default function App() {
     animeMovies,
     topRatedMovies,
     scifiMovies,
-    actionMovies,
-    thrillerMovies,
     indiaTrending,
     bollywoodMovies,
     southMovies,
@@ -685,8 +651,6 @@ export default function App() {
     setAnimeMovies(updater);
     setTopRatedMovies(updater);
     setScifiMovies(updater);
-    setActionMovies(updater);
-    setThrillerMovies(updater);
   };
 
   // Open movie details directly by TMDB or custom ID
@@ -697,8 +661,10 @@ export default function App() {
       ...animeMovies,
       ...topRatedMovies,
       ...scifiMovies,
-      ...actionMovies,
-      ...thrillerMovies,
+      ...indiaTrending,
+      ...bollywoodMovies,
+      ...southMovies,
+      ...indiaSeries,
       ...FALLBACK_MOVIES,
     ];
     let found = allCurrentMovies.find(
@@ -843,16 +809,18 @@ export default function App() {
               onOpenDetails={handleOpenDetails}
             />
 
-            {/* 1st Divider: Trending Masterworks */}
-            <MovieRow
-              title={userRegion === 'IN' ? "Trending Globally" : "Trending Masterworks"}
-              movies={trendingMovies}
-              onMovieClick={handleOpenDetails}
-              watchlist={watchlist}
-              onToggleWatchlist={toggleWatchlist}
-              onPlayMovie={handlePlayMovie}
-              showDivider={true}
-            />
+            {/* 1st Divider: Trending Masterworks (Global) - Only shown when not in country-specific view like India */}
+            {userRegion !== 'IN' && (
+              <MovieRow
+                title="Trending Masterworks"
+                movies={trendingMovies}
+                onMovieClick={handleOpenDetails}
+                watchlist={watchlist}
+                onToggleWatchlist={toggleWatchlist}
+                onPlayMovie={handlePlayMovie}
+                showDivider={true}
+              />
+            )}
 
             {/* India-Specific Feed: Popular, Bollywood, South Indian, and Originals */}
             {userRegion === 'IN' && (
@@ -930,28 +898,6 @@ export default function App() {
             <MovieRow
               title="Sci-Fi & Speculative Fiction"
               movies={scifiMovies}
-              onMovieClick={handleOpenDetails}
-              watchlist={watchlist}
-              onToggleWatchlist={toggleWatchlist}
-              onPlayMovie={handlePlayMovie}
-              showDivider={true}
-            />
-
-            {/* 5th Divider: Action & Adrenaline */}
-            <MovieRow
-              title="Action & Adrenaline"
-              movies={actionMovies}
-              onMovieClick={handleOpenDetails}
-              watchlist={watchlist}
-              onToggleWatchlist={toggleWatchlist}
-              onPlayMovie={handlePlayMovie}
-              showDivider={true}
-            />
-
-            {/* 6th Divider: Psychological Thrillers */}
-            <MovieRow
-              title="Psychological Thrillers"
-              movies={thrillerMovies}
               onMovieClick={handleOpenDetails}
               watchlist={watchlist}
               onToggleWatchlist={toggleWatchlist}

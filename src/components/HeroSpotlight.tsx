@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Play, Plus, Check, Info, ChevronLeft, ChevronRight, Image as ImageIcon, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl, getBackdropUrl, handleImageError } from '../utils/imageHelpers';
+import { getPosterUrl, getBackdropUrl, handleImageError, getLogoUrl } from '../utils/imageHelpers';
 import { isDataSaverActive } from '../services/themeStore';
 
 interface HeroSpotlightProps {
@@ -49,6 +49,11 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
   const activeMovie = spotlightMovies[currentIndex] || movies[0];
   const isSaved = watchlist.includes(activeMovie?.id);
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [activeMovie?.id, activeMovie?.logoUrl]);
 
   // Responsive images: portrait for mobile (2:3), landscape for PC/desktop (16:9)
   const portraitImages = useMemo(() => {
@@ -262,26 +267,24 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
         {/* All Text & Controls directly on the Canvas */}
         <div className="absolute inset-x-0 bottom-0 px-4 pb-4 pt-6 z-20 flex flex-col gap-2.5 pointer-events-auto sm:px-8 sm:pb-8 sm:pt-8">
           {/* TMDB Clearlogo PNG or Title */}
-          {activeMovie.logoUrl ? (
-            <div className="flex items-center justify-center sm:justify-start max-h-12 sm:max-h-18 py-0.5">
+          {activeMovie.logoUrl && !logoFailed ? (
+            <div className="flex items-center justify-center sm:justify-start max-h-14 sm:max-h-20 py-0.5">
               <img
-                src={activeMovie.logoUrl}
+                key={`hero-logo-${activeMovie.id}-${activeMovie.logoUrl}`}
+                src={getLogoUrl(activeMovie.logoUrl) || activeMovie.logoUrl}
                 alt={activeMovie.title}
                 referrerPolicy="no-referrer"
-                className="max-h-9 sm:max-h-14 max-w-[70%] sm:max-w-[45%] object-contain object-center sm:object-left drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)]"
+                className="max-h-11 sm:max-h-16 max-w-[80%] sm:max-w-[50%] object-contain object-center sm:object-left drop-shadow-[0_4px_18px_rgba(0,0,0,0.95)] filter brightness-105"
                 onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                  const fallback = document.getElementById(`fallback-title-${activeMovie.id}`);
-                  if (fallback) fallback.style.display = 'block';
+                  const target = e.currentTarget;
+                  if (activeMovie.logoUrl && activeMovie.logoUrl.includes('image.tmdb.org') && target.dataset.triedProxy !== 'true') {
+                    target.dataset.triedProxy = 'true';
+                    target.src = `/api/image?url=${encodeURIComponent(activeMovie.logoUrl)}`;
+                  } else {
+                    setLogoFailed(true);
+                  }
                 }}
               />
-              <h2
-                id={`fallback-title-${activeMovie.id}`}
-                style={{ display: 'none' }}
-                className="text-xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate text-center sm:text-left"
-              >
-                {activeMovie.title}
-              </h2>
             </div>
           ) : (
             <h2 className="text-xl sm:text-3xl font-bold tracking-tight text-white leading-tight drop-shadow-md truncate text-center sm:text-left">

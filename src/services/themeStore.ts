@@ -357,7 +357,14 @@ export interface UiThemeConfig {
 
   // Network & Bandwidth Optimization
   dataSaverMode: boolean; // Low-bandwidth optimization: pauses idle cycling, disables trailer autoplay, uses compressed w185/w342 posters, disables aggressive preloading
+
+  // Image Delivery Routing & Resolution Settings
+  imageRoutingMode?: 'auto' | 'proxy' | 'direct'; // 'auto' (failover to proxy) | 'proxy' (force server proxy) | 'direct' (TMDB CDN only)
+  imageResolutionQuality?: 'auto' | 'ultra' | 'high' | 'balanced' | 'compact';
 }
+
+export type ImageRoutingMode = 'auto' | 'proxy' | 'direct';
+export type ImageResolutionQuality = 'auto' | 'ultra' | 'high' | 'balanced' | 'compact';
 
 export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   bgMode: 'image',
@@ -382,6 +389,8 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   glassClarity: 'crystalClear',
   glassWhiteWash: 0,
   dataSaverMode: false,
+  imageRoutingMode: 'auto',
+  imageResolutionQuality: 'auto',
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -677,4 +686,61 @@ export async function setDataSaverMode(enabled: boolean): Promise<UiThemeConfig>
   await saveThemeConfig(updated);
   return updated;
 }
+
+/**
+ * Gets the current image routing mode ('auto' | 'proxy' | 'direct')
+ */
+export function getImageRoutingMode(): ImageRoutingMode {
+  if (typeof window === 'undefined') return 'auto';
+  try {
+    const raw = localStorage.getItem('refra_ui_theme_config');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      if (cfg.imageRoutingMode) return cfg.imageRoutingMode;
+    }
+  } catch {}
+  return 'auto';
+}
+
+/**
+ * Sets the image delivery routing mode
+ */
+export async function setImageRoutingMode(mode: ImageRoutingMode): Promise<UiThemeConfig> {
+  const current = await loadSavedThemeConfig();
+  const updated: UiThemeConfig = {
+    ...current,
+    imageRoutingMode: mode,
+  };
+  await saveThemeConfig(updated);
+  return updated;
+}
+
+/**
+ * Gets the current image resolution quality setting
+ */
+export function getImageResolutionQuality(): ImageResolutionQuality {
+  if (typeof window === 'undefined') return 'auto';
+  try {
+    const raw = localStorage.getItem('refra_ui_theme_config');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      if (cfg.imageResolutionQuality) return cfg.imageResolutionQuality;
+    }
+  } catch {}
+  return 'auto';
+}
+
+/**
+ * Sets the image resolution quality
+ */
+export async function setImageResolutionQuality(quality: ImageResolutionQuality): Promise<UiThemeConfig> {
+  const current = await loadSavedThemeConfig();
+  const updated: UiThemeConfig = {
+    ...current,
+    imageResolutionQuality: quality,
+  };
+  await saveThemeConfig(updated);
+  return updated;
+}
+
 

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, ExpansionOrigin } from '../types';
-import { getBackdropUrl, getPosterUrl, toWebpUrl } from '../utils/imageHelpers';
+import { getBackdropUrl, getPosterUrl, toWebpUrl, handleImageError } from '../utils/imageHelpers';
 import { ReviewsSection } from './ReviewsSection';
 import { trackStreamStart } from '../services/analytics';
 import { ArtworkLightboxModal } from './ArtworkLightboxModal';
@@ -113,6 +113,11 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
   }, [movie.id, isDataSaver, autoPlay]);
 
   // Ensure media tab responds to movie changes
+  const [logoFailed, setLogoFailed] = useState(false);
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [movie.id, movie.logoUrl]);
+
   useEffect(() => {
     if (!isDataSaver && autoPlay && movie.trailerYoutubeId) {
       setIsPlayingTrailer(true);
@@ -335,6 +340,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
             src={getBackdropUrl(movie.backdropUrl, 'w1280') || getPosterUrl(movie.posterUrl, 'w780')}
             alt=""
             referrerPolicy="no-referrer"
+            onError={(e) => handleImageError(e, true)}
             style={{ filter: 'blur(24px) saturate(130%) brightness(0.65)' }}
             className="w-full h-full object-cover scale-105 opacity-60 pointer-events-none"
           />
@@ -436,6 +442,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={imgUrl}
                       alt={`${movie.title} Official Poster ${idx + 1}`}
                       referrerPolicy="no-referrer"
+                      onError={(e) => handleImageError(e, false)}
                       className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 group-hover:scale-103 ${
                         selectedPosterIndex === idx ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
                       }`}
@@ -482,6 +489,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     src={imgUrl}
                     alt={`${movie.title} Fanart Still ${idx + 1}`}
                     referrerPolicy="no-referrer"
+                    onError={(e) => handleImageError(e, true)}
                     onClick={() => {
                       setLightboxMode('fanart');
                       setIsLightboxOpen(true);
@@ -689,26 +697,16 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     </span>
                   </div>
 
-                  {movie.logoUrl ? (
-                    <div className="flex items-center max-h-12 sm:max-h-14 py-0.5">
+                  {movie.logoUrl && !logoFailed ? (
+                    <div className="flex items-center max-h-14 sm:max-h-18 py-0.5">
                       <img
+                        key={`modal-logo-${movie.id}-${movie.logoUrl}`}
                         src={movie.logoUrl}
                         alt={movie.title}
                         referrerPolicy="no-referrer"
-                        className="max-h-10 sm:max-h-12 max-w-[85%] object-contain object-left drop-shadow-[0_4px_16px_rgba(0,0,0,0.85)]"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = 'none';
-                          const fb = document.getElementById(`modal-fallback-title-${movie.id}`);
-                          if (fb) fb.style.display = 'block';
-                        }}
+                        className="max-h-10 sm:max-h-14 max-w-[85%] object-contain object-left drop-shadow-[0_4px_16px_rgba(0,0,0,0.85)] filter brightness-105"
+                        onError={() => setLogoFailed(true)}
                       />
-                      <h3
-                        id={`modal-fallback-title-${movie.id}`}
-                        style={{ display: 'none' }}
-                        className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md"
-                      >
-                        {movie.title}
-                      </h3>
                     </div>
                   ) : (
                     <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight drop-shadow-md">

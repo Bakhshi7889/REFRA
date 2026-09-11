@@ -1,8 +1,8 @@
-// Refra Cinema PWA Service Worker v4 - High Performance Offline-First with Vector Logo
-const SHELL_CACHE = 'refra-shell-v4';
-const ASSETS_CACHE = 'refra-assets-v4';
-const ICONS_IMAGES_CACHE = 'refra-icons-images-v4';
-const DATA_CACHE = 'refra-api-data-v4';
+// Refra Cinema PWA Service Worker v7 - Direct CDN & High Performance Offline-First
+const SHELL_CACHE = 'refra-shell-v7';
+const ASSETS_CACHE = 'refra-assets-v7';
+const ICONS_IMAGES_CACHE = 'refra-icons-images-v7';
+const DATA_CACHE = 'refra-api-data-v7';
 
 const CURRENT_CACHES = [SHELL_CACHE, ASSETS_CACHE, ICONS_IMAGES_CACHE, DATA_CACHE];
 
@@ -25,9 +25,6 @@ const STATIC_ASSETS = [
   '/icons/torrentsdb.svg',
   '/icons/comet.png'
 ];
-
-// Fallback 1x1 transparent PNG / SVG placeholder for offline images
-const OFFLINE_IMAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150" viewBox="0 0 100 150" fill="none"><rect width="100" height="150" rx="8" fill="#171717"/><path d="M40 70h20M50 60v20" stroke="#404040" stroke-width="2" stroke-linecap="round"/></svg>`;
 
 // Precache essential static shell assets safely
 self.addEventListener('install', (event) => {
@@ -55,10 +52,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Listen for explicit skipWaiting message from UI update prompts
+// Listen for explicit skipWaiting and cache purge messages
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  if (event.data && event.data.type === 'PURGE_ALL_CACHES') {
+    event.waitUntil(
+      caches.keys().then((keys) => {
+        return Promise.all(keys.map((k) => caches.delete(k)));
+      }).then(() => self.skipWaiting())
+    );
   }
 });
 
@@ -116,11 +120,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Icons, Posters, Images & Fonts: CACHE-FIRST Strategy (Zero bandwidth when cached)
+  // 2. Cross-origin TMDB images: bypass Service Worker interception so that native browser network errors
+  // cleanly trigger React <img onError> and route immediately via /api/image server proxy
+  if (url.hostname.includes('image.tmdb.org')) {
+    return;
+  }
+
+  // 3. Icons, Posters, Images & Fonts: CACHE-FIRST Strategy (Zero bandwidth when cached)
   const isImageOrIcon =
     event.request.destination === 'image' ||
     url.pathname.match(/\.(png|jpg|jpeg|svg|webp|ico|gif)$/i) ||
-    url.hostname.includes('image.tmdb.org') ||
     url.pathname.includes('/icons/') ||
     url.pathname.startsWith('/api/image') ||
     url.hostname.includes('images.unsplash.com') ||
@@ -135,21 +144,31 @@ self.addEventListener('fetch', (event) => {
         }
 
         try {
-          const networkResponse = await fetch(event.request);
+          // Safeguard against Chrome only-if-cached error on cross-origin requests
+          const fetchPromise =
+            event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin'
+              ? fetch(event.request.url)
+              : fetch(event.request);
+
+          const networkResponse = await fetchPromise;
           if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
-            const clone = networkResponse.clone();
-            caches.open(ICONS_IMAGES_CACHE).then((cache) => cache.put(event.request, clone));
+            // Only cache local static assets and server image proxy to conserve mobile cache quota
+            if (!url.hostname.includes('image.tmdb.org') || url.pathname.startsWith('/api/image')) {
+              try {
+                const clone = networkResponse.clone();
+                caches.open(ICONS_IMAGES_CACHE).then((cache) => cache.put(event.request, clone)).catch(() => {});
+              } catch {}
+            }
           }
           return networkResponse;
         } catch {
-          // Return an SVG fallback placeholder if image request fails completely while offline
-          if (event.request.destination === 'image' || url.pathname.match(/\.(png|jpg|jpeg|webp)$/i)) {
-            return new Response(OFFLINE_IMAGE_SVG, {
-              headers: { 'Content-Type': 'image/svg+xml' },
-              status: 200,
-            });
-          }
-          return new Response('Not found', { status: 404 });
+          // Return HTTP 504 Gateway Timeout so browser <img> tags trigger onError handlers
+          // and gracefully switch to server proxy or refined inline cinema artwork
+          return new Response('Image network request failed', {
+            status: 504,
+            statusText: 'Gateway Timeout',
+            headers: { 'Content-Type': 'text/plain' },
+          });
         }
       })
     );
