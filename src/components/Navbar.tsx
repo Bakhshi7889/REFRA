@@ -73,8 +73,29 @@ export const Navbar: React.FC<NavbarProps> = ({
       style={{
         willChange: 'transform',
       }}
-      className="fixed top-0 left-0 right-0 z-40 pointer-events-none px-4 pt-3.5 flex justify-end max-w-md sm:max-w-xl md:max-w-2xl mx-auto safe-top"
+      className="fixed top-0 left-0 right-0 z-40 pointer-events-none px-4 pt-3.5 flex justify-between items-center max-w-md sm:max-w-xl md:max-w-2xl mx-auto safe-top"
     >
+      {/* Refra Brand Pill */}
+      <motion.button
+        whileTap={{ scale: 0.96 }}
+        type="button"
+        onClick={() => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        className="pointer-events-auto liquid-glass liquid-glass-pill rounded-full pl-2.5 pr-3 py-1.5 flex items-center gap-2 bg-[#101218]/65 border border-white/12 shadow-[0_8px_24px_rgba(0,0,0,0.4)] cursor-pointer hover:bg-white/10 transition-colors"
+        aria-label="Refra Home"
+        title="Refra — 4K Ad-Free Cinema"
+      >
+        <div className="w-5 h-5 rounded-full overflow-hidden bg-black flex items-center justify-center border border-white/10 shrink-0">
+          <img
+            src="/refra_logo_vector.svg"
+            alt="Refra"
+            className="w-full h-full object-contain"
+          />
+        </div>
+        <span className="text-[12px] font-extrabold tracking-widest text-white/90">REFRA</span>
+      </motion.button>
+
       <div className="pointer-events-auto liquid-glass liquid-glass-pill rounded-full px-2 py-1.5 flex items-center gap-1 max-w-fit relative overflow-hidden bg-[#101218]/65 border-white/12 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
         {/* Chrome Native PWA Install Button */}
         {!isInstalled && isInstallable && (

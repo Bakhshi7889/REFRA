@@ -753,10 +753,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-2xl bg-white/5 text-neutral-300 border border-white/10 flex items-center justify-center">
-                <Download className="w-4 h-4" />
+              <div className="w-10 h-10 rounded-2xl bg-black border border-white/10 flex items-center justify-center p-1.5 overflow-hidden shrink-0 shadow-inner">
+                <img src="/refra_logo_vector.svg" alt="Refra" className="w-full h-full object-contain" />
               </div>
-              <div className="text-xs font-semibold text-white">Install Refra</div>
+              <div>
+                <div className="text-xs font-semibold text-white">Install Refra</div>
+                <div className="text-[10px] text-neutral-400">4K cinema app on home screen</div>
+              </div>
             </div>
 
             <button
@@ -815,6 +818,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   settings.liquidDistortion ? 'translate-x-6 bg-neutral-950' : 'translate-x-1 bg-neutral-400'
                 }`}
               />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ================= SECTION 6: APP IDENTITY & PWA STARTING ================= */}
+      <div className="space-y-2">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-3">
+          App Identity & PWA
+        </h4>
+        <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-black border border-white/10 flex items-center justify-center p-1.5 overflow-hidden shrink-0 shadow-inner">
+                <img src="/refra_logo_vector.svg" alt="Refra" className="w-full h-full object-contain" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-white">Refra Cinema v4.0</div>
+                <div className="text-[10px] text-neutral-400">PWA Vector Identity & Offline Shell</div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('refra:replay-splash'))}
+              className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all cursor-pointer active:scale-[0.96] border border-white/10"
+              title="Preview PWA starting screen"
+            >
+              Preview Start
             </button>
           </div>
         </div>

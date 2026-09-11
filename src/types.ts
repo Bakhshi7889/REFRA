@@ -57,8 +57,11 @@ export interface FilmRating {
 
 export interface WatchProvider {
   id?: number;
-  name: string;
-  logoUrl: string;
+  provider_id?: number;
+  provider_name?: string;
+  logo_path?: string;
+  name?: string;
+  logoUrl?: string;
   type?: string;
 }
 

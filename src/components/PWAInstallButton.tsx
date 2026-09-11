@@ -46,8 +46,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         onClick={handleClick}
         className={`w-full py-2.5 px-4 rounded-2xl bg-white hover:bg-neutral-200 text-neutral-950 font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-[0.96] ${className}`}
       >
-        <Download className="w-4 h-4" />
-        <span>Install App</span>
+        <div className="w-4 h-4 rounded-full overflow-hidden bg-black flex items-center justify-center shrink-0">
+          <img src="/refra_logo_vector.svg" alt="Refra" className="w-full h-full object-contain" />
+        </div>
+        <span>Install Refra</span>
       </button>
     );
   }
@@ -58,7 +60,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       onClick={handleClick}
       className={`px-3.5 py-1.5 rounded-full bg-white text-neutral-950 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-[0.96] ${className}`}
     >
-      <Smartphone className="w-3.5 h-3.5" />
+      <div className="w-3.5 h-3.5 rounded-full overflow-hidden bg-black flex items-center justify-center shrink-0">
+        <img src="/refra_logo_vector.svg" alt="Refra" className="w-full h-full object-contain" />
+      </div>
       <span>Install</span>
     </button>
   );

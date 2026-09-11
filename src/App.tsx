@@ -14,6 +14,7 @@ import { WatchlistView } from './components/WatchlistView';
 import { ExploreView } from './components/ExploreView';
 import { ProfileView } from './components/ProfileView';
 import { SearchView } from './components/SearchView';
+import { PWAStartSplash } from './components/PWAStartSplash';
 import { FALLBACK_MOVIES } from './data/movies';
 import {
   fetchSpotlightMovies,
@@ -35,7 +36,12 @@ import { Movie, CategoryFilter, NavTab, ExpansionOrigin, StreamItem } from './ty
 import { Search, Star, Loader2, Plus, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getPosterUrl } from './utils/imageHelpers';
-import { getValid6HourCache, save6HourCache } from './services/movieCache';
+import {
+  getValid6HourCache,
+  save6HourCache,
+  areMovieListsDifferent,
+  getIndexedDbCachedCatalog,
+} from './services/movieCache';
 import {
   getIndexedDbWatchlist,
   saveIndexedDbWatchlist,
@@ -105,10 +111,10 @@ export default function App() {
   );
 
   const [userRegion, setUserRegionState] = useState<string>(() => getUserRegion() || 'US');
-  const [indiaTrending, setIndiaTrending] = useState<Movie[]>([]);
-  const [bollywoodMovies, setBollywoodMovies] = useState<Movie[]>([]);
-  const [southMovies, setSouthMovies] = useState<Movie[]>([]);
-  const [indiaSeries, setIndiaSeries] = useState<Movie[]>([]);
+  const [indiaTrending, setIndiaTrending] = useState<Movie[]>(() => cachedData?.indiaTrending || []);
+  const [bollywoodMovies, setBollywoodMovies] = useState<Movie[]>(() => cachedData?.bollywoodMovies || []);
+  const [southMovies, setSouthMovies] = useState<Movie[]>(() => cachedData?.southMovies || []);
+  const [indiaSeries, setIndiaSeries] = useState<Movie[]>(() => cachedData?.indiaSeries || []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
@@ -215,16 +221,29 @@ export default function App() {
     }
   }, [watchlist]);
 
-  // Load dynamic data from TMDB / OMDB / Fanart APIs
+  // Load dynamic data from TMDB / OMDB / Fanart APIs with offline-first background update
   useEffect(() => {
     let isMounted = true;
 
-    async function loadData() {
-      // If valid 6-hour cache is already loaded, skip redundant API fetch & heavy JSON compute
-      if (cachedData && cachedData.trendingMovies && cachedData.trendingMovies.length > 0) {
-        return;
-      }
+    // Asynchronously restore from IndexedDB if localStorage cache was absent
+    if (!cachedData) {
+      getIndexedDbCachedCatalog().then((dbCatalog) => {
+        if (!isMounted || !dbCatalog) return;
+        if (dbCatalog.spotlightMovies?.length) setSpotlightMovies(dbCatalog.spotlightMovies);
+        if (dbCatalog.trendingMovies?.length) setTrendingMovies(dbCatalog.trendingMovies);
+        if (dbCatalog.animeMovies?.length) setAnimeMovies(dbCatalog.animeMovies);
+        if (dbCatalog.topRatedMovies?.length) setTopRatedMovies(dbCatalog.topRatedMovies);
+        if (dbCatalog.scifiMovies?.length) setScifiMovies(dbCatalog.scifiMovies);
+        if (dbCatalog.actionMovies?.length) setActionMovies(dbCatalog.actionMovies);
+        if (dbCatalog.thrillerMovies?.length) setThrillerMovies(dbCatalog.thrillerMovies);
+        if (dbCatalog.indiaTrending?.length) setIndiaTrending(dbCatalog.indiaTrending);
+        if (dbCatalog.bollywoodMovies?.length) setBollywoodMovies(dbCatalog.bollywoodMovies);
+        if (dbCatalog.southMovies?.length) setSouthMovies(dbCatalog.southMovies);
+        if (dbCatalog.indiaSeries?.length) setIndiaSeries(dbCatalog.indiaSeries);
+      });
+    }
 
+    async function loadData() {
       try {
         const [spotlights, trending, anime, topRated, scifi, action, thrillers] = await Promise.all([
           fetchSpotlightMovies(),
@@ -237,60 +256,80 @@ export default function App() {
         ]);
 
         if (isMounted) {
-          const finalSpotlights =
-            spotlights.length > 0
-              ? spotlights
-              : cachedData?.spotlightMovies ||
-                FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured);
-          const finalTrending =
-            trending.length > 0
-              ? trending
-              : cachedData?.trendingMovies || FALLBACK_MOVIES;
-          const finalAnime =
-            anime.length > 0
-              ? anime
-              : cachedData?.animeMovies ||
-                FALLBACK_MOVIES.filter((m) => m.genres.includes('Animation'));
-          const finalTopRated =
-            topRated.length > 0
-              ? topRated
-              : cachedData?.topRatedMovies || FALLBACK_MOVIES.slice(1);
-          const finalScifi =
-            scifi.length > 0
-              ? scifi
-              : cachedData?.scifiMovies ||
-                FALLBACK_MOVIES.filter((m) => m.genres.includes('Sci-Fi'));
-          const finalAction =
-            action.length > 0
-              ? action
-              : cachedData?.actionMovies ||
-                FALLBACK_MOVIES.filter((m) => m.genres.includes('Action'));
-          const finalThrillers =
-            thrillers.length > 0
-              ? thrillers
-              : cachedData?.thrillerMovies ||
-                FALLBACK_MOVIES.filter(
-                  (m) => m.genres.includes('Thriller') || m.genres.includes('Drama')
-                );
+          let hasChanges = false;
 
-          setSpotlightMovies(finalSpotlights);
-          setTrendingMovies(finalTrending);
-          setAnimeMovies(finalAnime);
-          setTopRatedMovies(finalTopRated);
-          setScifiMovies(finalScifi);
-          setActionMovies(finalAction);
-          setThrillerMovies(finalThrillers);
-
-          // Save to 6-hour cache with image preloading
-          save6HourCache({
-            spotlightMovies: finalSpotlights,
-            trendingMovies: finalTrending,
-            animeMovies: finalAnime,
-            topRatedMovies: finalTopRated,
-            scifiMovies: finalScifi,
-            actionMovies: finalAction,
-            thrillerMovies: finalThrillers,
+          setSpotlightMovies((prev) => {
+            if (spotlights.length > 0 && areMovieListsDifferent(prev, spotlights)) {
+              hasChanges = true;
+              return spotlights;
+            }
+            return prev;
           });
+
+          setTrendingMovies((prev) => {
+            if (trending.length > 0 && areMovieListsDifferent(prev, trending)) {
+              hasChanges = true;
+              return trending;
+            }
+            return prev;
+          });
+
+          setAnimeMovies((prev) => {
+            if (anime.length > 0 && areMovieListsDifferent(prev, anime)) {
+              hasChanges = true;
+              return anime;
+            }
+            return prev;
+          });
+
+          setTopRatedMovies((prev) => {
+            if (topRated.length > 0 && areMovieListsDifferent(prev, topRated)) {
+              hasChanges = true;
+              return topRated;
+            }
+            return prev;
+          });
+
+          setScifiMovies((prev) => {
+            if (scifi.length > 0 && areMovieListsDifferent(prev, scifi)) {
+              hasChanges = true;
+              return scifi;
+            }
+            return prev;
+          });
+
+          setActionMovies((prev) => {
+            if (action.length > 0 && areMovieListsDifferent(prev, action)) {
+              hasChanges = true;
+              return action;
+            }
+            return prev;
+          });
+
+          setThrillerMovies((prev) => {
+            if (thrillers.length > 0 && areMovieListsDifferent(prev, thrillers)) {
+              hasChanges = true;
+              return thrillers;
+            }
+            return prev;
+          });
+
+          // Save to 6-hour cache (IndexedDB + localStorage) if new items arrived
+          if (hasChanges || !cachedData) {
+            save6HourCache({
+              spotlightMovies: spotlights.length > 0 ? spotlights : spotlightMovies,
+              trendingMovies: trending.length > 0 ? trending : trendingMovies,
+              animeMovies: anime.length > 0 ? anime : animeMovies,
+              topRatedMovies: topRated.length > 0 ? topRated : topRatedMovies,
+              scifiMovies: scifi.length > 0 ? scifi : scifiMovies,
+              actionMovies: action.length > 0 ? action : actionMovies,
+              thrillerMovies: thrillers.length > 0 ? thrillers : thrillerMovies,
+              indiaTrending,
+              bollywoodMovies,
+              southMovies,
+              indiaSeries,
+            });
+          }
         }
       } catch (err) {
         console.warn('API fetch notice:', err);
@@ -306,10 +345,39 @@ export default function App() {
           fetchIndianSeries(),
         ]);
         if (isMounted) {
-          if (inTrend?.length > 0) setIndiaTrending(inTrend);
-          if (inBolly?.length > 0) setBollywoodMovies(inBolly);
-          if (inSouth?.length > 0) setSouthMovies(inSouth);
-          if (inTv?.length > 0) setIndiaSeries(inTv);
+          let hasIndiaChanges = false;
+          if (inTrend?.length > 0 && areMovieListsDifferent(indiaTrending, inTrend)) {
+            setIndiaTrending(inTrend);
+            hasIndiaChanges = true;
+          }
+          if (inBolly?.length > 0 && areMovieListsDifferent(bollywoodMovies, inBolly)) {
+            setBollywoodMovies(inBolly);
+            hasIndiaChanges = true;
+          }
+          if (inSouth?.length > 0 && areMovieListsDifferent(southMovies, inSouth)) {
+            setSouthMovies(inSouth);
+            hasIndiaChanges = true;
+          }
+          if (inTv?.length > 0 && areMovieListsDifferent(indiaSeries, inTv)) {
+            setIndiaSeries(inTv);
+            hasIndiaChanges = true;
+          }
+
+          if (hasIndiaChanges) {
+            save6HourCache({
+              spotlightMovies,
+              trendingMovies,
+              animeMovies,
+              topRatedMovies,
+              scifiMovies,
+              actionMovies,
+              thrillerMovies,
+              indiaTrending: inTrend?.length > 0 ? inTrend : indiaTrending,
+              bollywoodMovies: inBolly?.length > 0 ? inBolly : bollywoodMovies,
+              southMovies: inSouth?.length > 0 ? inSouth : southMovies,
+              indiaSeries: inTv?.length > 0 ? inTv : indiaSeries,
+            });
+          }
         }
       } catch (err) {
         console.warn('India feed fetch notice:', err);
@@ -730,6 +798,9 @@ export default function App() {
           backgroundColor: isCustomImageActive ? 'transparent' : activeBgColor,
         }}
       >
+        {/* PWA Starting / Launch Experience */}
+        <PWAStartSplash />
+
         {/* Floating Combined Action Pill (Notification + Cast + Install) */}
         {(activeTab === 'home' || activeTab === 'explore') && (
           <Navbar

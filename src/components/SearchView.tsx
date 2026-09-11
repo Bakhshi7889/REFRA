@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, toWebpUrl } from '../utils/imageHelpers';
 import { fetchWatchProviders, discoverMoviesWithFilters, WatchProvider } from '../services/movieApi';
+import { getCachedWatchProviders } from '../services/movieCache';
 import { getUserRegion } from '../services/regionStore';
 
 const GENRES = [
@@ -105,7 +106,11 @@ export function SearchView({
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [providers, setProviders] = useState<WatchProvider[]>([]);
+  const [providers, setProviders] = useState<WatchProvider[]>(() => {
+    const reg = getUserRegion() || 'US';
+    const cached = getCachedWatchProviders(reg);
+    return cached && cached.length > 0 ? cached.slice(0, 16) : [];
+  });
   const [selectedProvider, setSelectedProvider] = useState<WatchProvider | null>(null);
 
   // Filter states
@@ -200,7 +205,16 @@ export function SearchView({
               topProviders.push(p);
             }
           }
-          setProviders(topProviders.slice(0, 16));
+          const nextProviders = topProviders.slice(0, 16);
+          setProviders((prev) => {
+            if (
+              prev.length === nextProviders.length &&
+              prev.every((p, idx) => p.provider_id === nextProviders[idx]?.provider_id)
+            ) {
+              return prev;
+            }
+            return nextProviders;
+          });
         }
       );
     };
