@@ -73,9 +73,11 @@ MDBLIST_API_KEY="your_mdblist_api_key_here"
 FANART_API_KEY="your_fanart_api_key_here"
 
 # Google Analytics (Optional)
-VITE_GA_MEASUREMENT_ID=""
+VITE_GA_MEASUREMENT_ID="
+
 Note: The application includes built-in fallback catalogs, so it will still launch and display movies even without all API keys configured!
-4. Run Development Server
+
+### 4. Run Development Server
 Bash
 npm run dev
 Open http://localhost:3000 in your browser.
