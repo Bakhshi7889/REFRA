@@ -101,7 +101,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
               key={movie.id}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.08, ease: 'easeOut' }}
-              style={{ willChange: 'transform', contain: 'layout paint' }}
+              style={{ willChange: 'transform', contain: 'paint' }}
               className="media-card-item gpu-layer flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
               onClick={() => {
                 if (isDraggingRef.current) return;
@@ -113,6 +113,8 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
                 src={getBackdropUrl(movie.backdropUrl, 'w1280', movie.posterUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
+                loading="eager"
+                decoding="async"
                 draggable={false}
                 onError={(e) => handleImageError(e, true)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"

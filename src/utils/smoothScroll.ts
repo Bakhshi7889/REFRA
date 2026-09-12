@@ -57,14 +57,18 @@ export function initSmoothScroll(): () => void {
     lenisInstance = null;
   }
 
+  const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
   const lenis = new Lenis({
-    duration: 1.05,
+    duration: 0.85,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     orientation: 'vertical',
     gestureOrientation: 'vertical',
     smoothWheel: true,
-    wheelMultiplier: 1.0,
-    touchMultiplier: 1.2,
+    wheelMultiplier: 0.95,
+    syncTouch: false,
+    syncTouchLerp: 0.075,
+    touchMultiplier: isTouch ? 0 : 1.0,
     infinite: false,
   });
 

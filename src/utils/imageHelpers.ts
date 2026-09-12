@@ -27,29 +27,40 @@ export const FALLBACK_BACKDROP = `data:image/svg+xml;utf8,<svg xmlns="http://www
 
 /**
  * Wraps or routes an external image URL using the designated routing strategy.
- * By default and design, it routes TMDB and cinema images through the Cloudflare Edge Mirror (wsrv.nl),
- * replicating the exact unblocked Cloudflare CDN architecture used by the Anime feed.
+ * By default ('auto' or 'direct'), delivers directly from TMDB's high-speed global CDN (image.tmdb.org).
+ * Automatically fails over via handleImageError if an ISP or browser blocks direct CDN access.
  */
 export function wrapWithProxyIfNeeded(url: string): string {
   if (!url || typeof url !== 'string') return url;
   if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url;
 
-  // Unsplash, AniList, and MyAnimeList already use fast, globally unblocked CDNs
+  // Static assets or already wrapped/specialized CDNs
   if (
     url.includes('s4.anilist.co') ||
     url.includes('anilist.co') ||
     url.includes('cdn.myanimelist.net') ||
     url.includes('images.unsplash.com') ||
     url.includes('wsrv.nl') ||
-    url.includes('weserv.nl')
+    url.includes('weserv.nl') ||
+    url.startsWith('/api/image')
   ) {
     return url;
   }
 
-  // Direct CDN and Refraction proxy fail on restricted/throttled ISPs.
-  // Use the exact settings used for Anime: Cloudflare Edge Mirror (wsrv.nl) with webp output.
-  const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
-  return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp`;
+  const mode = getImageRoutingMode();
+  if (mode === 'proxy') {
+    return `/api/image?url=${encodeURIComponent(url)}`;
+  }
+
+  if (mode === 'anime_edge') {
+    const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
+    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp`;
+  }
+
+  // Default ('auto' and 'direct'):
+  // Use direct TMDB CDN (image.tmdb.org). It is the fastest, official, HTTP/2 CDN worldwide.
+  // If an ISP restricts direct access, handleImageError will automatically rescue via /api/image.
+  return url;
 }
 
 /**
@@ -162,48 +173,68 @@ export function getLogoUrl(pathOrUrl: string | null | undefined): string | null 
 
 /**
  * Gracefully replaces a broken image element source:
- * 1. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues using Anime Cloudflare Edge Mirror (wsrv.nl)
- * 2. If Edge mirror failed, attempts high-speed server image proxy (/api/image)
- * 3. If all fail or offline, provides clean inline cinematic SVG placeholder
+ * 1. Unwraps any wrapped URL to find original asset URL.
+ * 2. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues via local server proxy (/api/image)
+ * 3. If server proxy failed, attempts Cloudflare Edge Mirror (wsrv.nl)
+ * 4. If all fail or offline, provides clean inline cinematic SVG placeholder
  */
 export function handleImageError(
   e: React.SyntheticEvent<HTMLImageElement, Event>,
   isBackdrop = false
 ): void {
   const target = e.currentTarget;
-  const currentSrc = target.src;
+  const currentSrc = target.src || '';
 
-  // Step 1: If direct image failed (e.g. image.tmdb.org blocked by ISP),
-  // immediately rescue using the unblocked Anime-style Cloudflare Edge Mirror (wsrv.nl)
-  if (
-    currentSrc &&
-    !currentSrc.includes('wsrv.nl') &&
-    !currentSrc.includes('weserv.nl') &&
-    (currentSrc.startsWith('http://') || currentSrc.startsWith('https://')) &&
-    target.dataset.triedEdge !== 'true'
-  ) {
-    target.dataset.triedEdge = 'true';
-    target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentSrc)}&output=webp`;
+  // Prevent infinite loops once fallback has been applied
+  if (target.dataset.failed === 'true') {
     return;
   }
 
-  // Step 2: If Edge mirror failed or on restricted environment, attempt server proxy
+  // Extract the underlying clean original URL if wrapped
+  let rawUrl = currentSrc;
+  if (currentSrc.includes('/api/image?url=')) {
+    try {
+      const u = new URL(currentSrc, window.location.origin);
+      const extracted = u.searchParams.get('url');
+      if (extracted) rawUrl = decodeURIComponent(extracted);
+    } catch {}
+  } else if (currentSrc.includes('wsrv.nl/?url=') || currentSrc.includes('weserv.nl/?url=')) {
+    try {
+      const u = new URL(currentSrc);
+      const extracted = u.searchParams.get('url');
+      if (extracted) {
+        rawUrl = extracted.startsWith('http') ? extracted : `https://${extracted}`;
+      }
+    } catch {}
+  }
+
+  // Stage 1: Rescue via high-speed server image proxy (/api/image)
   if (
-    currentSrc &&
+    rawUrl &&
     !currentSrc.includes('/api/image') &&
     target.dataset.triedProxy !== 'true'
   ) {
     target.dataset.triedProxy = 'true';
-    target.src = `/api/image?url=${encodeURIComponent(currentSrc)}`;
+    target.src = `/api/image?url=${encodeURIComponent(rawUrl)}`;
     return;
   }
 
-  // Step 3: Inline SVG zero-network fallback
-  const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
-  if (target.src !== fallback) {
-    target.onerror = null; // Prevent secondary error loops
-    target.src = fallback;
+  // Stage 2: Rescue via Cloudflare Edge Mirror (wsrv.nl)
+  if (
+    rawUrl &&
+    !currentSrc.includes('wsrv.nl') &&
+    target.dataset.triedEdge !== 'true'
+  ) {
+    target.dataset.triedEdge = 'true';
+    const clean = rawUrl.replace(/^[a-z]+:\/\//i, '');
+    target.src = `https://wsrv.nl/?url=${encodeURIComponent(clean)}&output=webp`;
+    return;
   }
+
+  // Stage 3: Zero-network inline SVG fallback
+  target.dataset.failed = 'true';
+  target.onerror = null; // Remove handler to eliminate secondary error loops
+  target.src = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
 }
 
 /**

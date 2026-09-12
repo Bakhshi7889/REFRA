@@ -59,18 +59,19 @@ export const MovieRow: React.FC<MovieRowProps> = ({
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      const isVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
-      const delta = isVertical ? e.deltaY : e.deltaX;
+      // Only handle intentional horizontal scrolling (trackpad deltaX or Shift+wheel)
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const delta = e.shiftKey ? e.deltaY : e.deltaX;
+        if (Math.abs(delta) > 2) {
+          const canScroll =
+            (delta > 0 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4) ||
+            (delta < 0 && el.scrollLeft > 4);
 
-      if (Math.abs(delta) > 2) {
-        const canScroll =
-          (delta > 0 && el.scrollLeft < el.scrollWidth - el.clientWidth - 4) ||
-          (delta < 0 && el.scrollLeft > 4);
-
-        if (canScroll) {
-          e.preventDefault();
-          el.scrollLeft += delta;
-          updateScrollButtons();
+          if (canScroll) {
+            e.preventDefault();
+            el.scrollLeft += delta;
+            updateScrollButtons();
+          }
         }
       }
     };
@@ -210,7 +211,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 if (isDraggingRef.current) return;
                 onMovieClick(movie, e.currentTarget.getBoundingClientRect());
               }}
-              style={{ contain: 'layout paint' }}
+              style={{ contain: 'paint' }}
               className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group compositor-card"
             >
               {/* Full Poster Image */}
@@ -218,7 +219,8 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
-                loading="lazy"
+                loading="eager"
+                decoding="async"
                 draggable={false}
                 onError={(e) => handleImageError(e, false)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"

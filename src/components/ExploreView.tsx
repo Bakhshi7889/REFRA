@@ -211,6 +211,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <img
                   src={toWebpUrl(director.avatarUrl, 120)}
                   alt={director.name}
+                  loading="eager"
+                  decoding="async"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(director.name)}&background=14161f&color=ffffff`;
+                  }}
                   className="w-full h-full object-cover"
                 />
               </div>

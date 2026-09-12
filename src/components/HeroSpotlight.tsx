@@ -206,6 +206,8 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                 src={currentImageUrl}
                 alt=""
                 aria-hidden="true"
+                loading="eager"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50 brightness-[0.65] pointer-events-none transform-gpu"
               />
@@ -214,6 +216,8 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               <img
                 src={currentImageUrl}
                 alt={activeMovie.title}
+                loading="eager"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 onError={(e) => handleImageError(e, !isMobile)}
                 className="relative z-10 w-full h-full object-cover object-center sm:object-cover sm:object-center drop-shadow-2xl"

@@ -753,7 +753,11 @@ export default function App() {
   useEffect(() => {
     if (!isCustomImageActive) return;
 
-    const handleScrollProgress = (progress: number) => {
+    let ticking = false;
+    let pendingProgress = 0;
+
+    const applyProgress = () => {
+      ticking = false;
       if (!bgImageRef.current) return;
       const vh = window.innerHeight;
       const vw = window.innerWidth;
@@ -766,10 +770,18 @@ export default function App() {
       // On PC widescreen, full travel from top (0) to bottom (maxTravel)
       // On mobile portrait, smooth subtle organic parallax
       const travel = isDesktop ? maxTravel : Math.min(maxTravel, vh * 0.2);
-      const translateY = -progress * travel;
+      const translateY = -pendingProgress * travel;
       const scale = (themeConfig.bgBlur || 0) > 0 ? 1.05 : 1.0;
 
-      bgImageRef.current.style.transform = `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${scale})`;
+      bgImageRef.current.style.transform = `translate3d(0, ${translateY.toFixed(1)}px, 0) scale(${scale})`;
+    };
+
+    const handleScrollProgress = (progress: number) => {
+      pendingProgress = progress;
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(applyProgress);
+      }
     };
 
     const unsubscribe = subscribeScrollProgress(handleScrollProgress);

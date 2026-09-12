@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl, toWebpUrl } from '../utils/imageHelpers';
+import { getPosterUrl, toWebpUrl, handleImageError } from '../utils/imageHelpers';
 import { fetchWatchProviders, discoverMoviesWithFilters, WatchProvider } from '../services/movieApi';
 import { getCachedWatchProviders } from '../services/movieCache';
 import { getUserRegion } from '../services/regionStore';

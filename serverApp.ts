@@ -1486,6 +1486,8 @@ app.use((req, res, next) => {
   // In-memory cache for aggregated streams responses (15-minute TTL) to minimize compute
   const aggregatedStreamsCache = new Map<string, { data: any; timestamp: number }>();
   const STREAMS_CACHE_TTL = 15 * 60 * 1000;
+  // In-memory cache for live PenguPlay stream scraping (15 min TTL)
+  const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>();
 
   function isTitleMatchingMovie(streamTitleOrDesc: string, targetTitle: string): boolean {
     if (!streamTitleOrDesc || !targetTitle) return true;
@@ -1628,23 +1630,24 @@ app.use((req, res, next) => {
         ? `https://embed.smashystream.com/playere.php?tmdb=${targetMirrorId}&season=${season}&episode=${episode}`
         : `https://embed.smashystream.com/playere.php?tmdb=${targetMirrorId}`;
 
-      // In-memory cache for live PenguPlay stream scraping (15 min TTL)
-      const penguStreamCache = new Map<string, { streams: any[]; expiresAt: number }>();
-
-      // 1. Live PenguPlay Streams (User Favorite Addon)
-      // Note: Only query if we have a valid, verified target ID for this film (never a hardcoded default)
+      // 1. Concurrently fetch streams from scrapers with fast 3500ms timeout
       let rawPenguStreams: any[] = [];
+      let rawTorrentsDbStreams: any[] = [];
+
       if (streamTargetId) {
         const penguCacheKey = `${mediaType}:${streamTargetId}`;
         const cachedPengu = penguStreamCache.get(penguCacheKey);
-        if (cachedPengu && Date.now() < cachedPengu.expiresAt) {
-          rawPenguStreams = cachedPengu.streams;
-        } else {
+        
+        const fetchPengu = async () => {
+          if (cachedPengu && Date.now() < cachedPengu.expiresAt) {
+            rawPenguStreams = cachedPengu.streams;
+            return;
+          }
           try {
             const penguToken = process.env.PENGUPLAY_TOKEN || 'Lq-ENcXb6apaqdwbW8iDjK5gDKCpZ6_2qXP272M7UhY';
             const penguConfigPath = encodeURIComponent(JSON.stringify({ auth_token: penguToken }));
             const pController = new AbortController();
-            const pTimeout = setTimeout(() => pController.abort(), 12000);
+            const pTimeout = setTimeout(() => pController.abort(), 3500);
             const pRes = await fetch(`https://pengu.uk/${penguConfigPath}/stream/${mediaType}/${streamTargetId}.json`, {
               signal: pController.signal,
               headers: {
@@ -1656,7 +1659,6 @@ app.use((req, res, next) => {
             if (pRes.ok) {
               const pData = await pRes.json();
               if (Array.isArray(pData.streams)) {
-                // Exclude the 'You must sign in' notice stream
                 rawPenguStreams = pData.streams.filter(
                   (s: any) => s.title !== 'You must sign in' && !s.url?.includes('signin.mp4')
                 );
@@ -1668,37 +1670,31 @@ app.use((req, res, next) => {
                 }
               }
             }
-          } catch (err: any) {
-            if (err.name !== 'AbortError') {
-              console.warn('PenguPlay live scrape note:', err.message);
-            }
-          }
-        }
-      }
+          } catch {}
+        };
 
-      // 2. Live TorrentsDB Streams (Only query if we have a valid target ID)
-      let rawTorrentsDbStreams: any[] = [];
-      if (streamTargetId) {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 4500);
-          const tdbRes = await fetch(`https://torrentsdb.com/stream/${mediaType}/${streamTargetId}.json`, {
-            signal: controller.signal,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              Accept: 'application/json',
-            },
-          });
-          clearTimeout(timeout);
-          if (tdbRes.ok) {
-            const tdbData = await tdbRes.json();
-            if (Array.isArray(tdbData.streams)) {
-              rawTorrentsDbStreams = tdbData.streams;
+        const fetchTorrentsDb = async () => {
+          try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3500);
+            const tdbRes = await fetch(`https://torrentsdb.com/stream/${mediaType}/${streamTargetId}.json`, {
+              signal: controller.signal,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                Accept: 'application/json',
+              },
+            });
+            clearTimeout(timeout);
+            if (tdbRes.ok) {
+              const tdbData = await tdbRes.json();
+              if (Array.isArray(tdbData.streams)) {
+                rawTorrentsDbStreams = tdbData.streams;
+              }
             }
-          }
-        } catch (err: any) {
-          console.warn('TorrentsDB scrape note:', err.message);
-        }
+          } catch {}
+        };
+
+        await Promise.allSettled([fetchPengu(), fetchTorrentsDb()]);
       }
 
       // Addon logos (including authentic assets for PenguPlay, TorrentClaw, ThePirateBay+, Comet, Torrentio, TorrentsDB)

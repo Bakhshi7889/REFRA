@@ -29,7 +29,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           src={PENGU_PLAY_LOGO_DATA_URI}
           alt={serverName || 'PenguPlay'}
           className="w-full h-full object-contain pointer-events-none drop-shadow"
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -46,7 +47,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://i.imgur.com/dPa2clS.png';
           }}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -63,7 +65,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://torrentclaw.com/icon-512.png';
           }}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -80,7 +83,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/g0ldyy/comet/refs/heads/main/comet/assets/icon.png';
           }}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -97,7 +101,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/TheBeastLT/torrentio-scraper/master/addon/static/images/logo_v1.png';
           }}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -114,7 +119,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://torrentsdb.com/icon.svg';
           }}
-          loading="lazy"
+          loading="eager"
+          decoding="async"
         />
       </div>
     );
@@ -128,7 +134,8 @@ export const ProviderLogo: React.FC<ProviderLogoProps> = ({
           src={logoUrl}
           alt={serverName}
           className="w-full h-full object-contain pointer-events-none drop-shadow"
-          loading="lazy"
+          loading="eager"
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setImgFailed(true)}
         />

@@ -2,7 +2,7 @@ import React from 'react';
 import { Bookmark, Star, Trash2, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl } from '../utils/imageHelpers';
+import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
 
 interface WatchlistViewProps {
   watchlistMovies: Movie[];
