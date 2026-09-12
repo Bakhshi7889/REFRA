@@ -369,10 +369,10 @@ export type ImageResolutionQuality = 'auto' | 'ultra' | 'high' | 'balanced' | 'c
 export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   bgMode: 'image',
   selectedBgColor: '#0c0d12',
-  customBgImage: '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp',
-  customBgImageName: 'Chrome Horizon',
-  bgOverlayDim: 0,
-  bgBlur: 12,
+  customBgImage: '/wallpapers/4d86f61b6c6b7dcb5bce020f2845b1b7.webp',
+  customBgImageName: 'Solaris Flare (9:16)',
+  bgOverlayDim: 30,
+  bgBlur: 0,
   selectedFontId: 'panchange',
   selectedPaletteId: null, // Neutral default (no color tint)
   animationEngine: 'fluid',
@@ -591,7 +591,7 @@ export function applyThemeToDocument(config: UiThemeConfig): void {
   }
 }
 
-const THEME_VERSION_KEY = 'refra_theme_ver_v12_liquid_40px_1px_clean';
+const THEME_VERSION_KEY = 'refra_theme_ver_v13_solaris_flare_pc_scroll';
 
 export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
   try {
@@ -610,14 +610,28 @@ export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
         glassBlur: 1,
         liquidGlassMode: 'crystal',
         bgMode: 'image',
-        customBgImage: '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp',
-        customBgImageName: 'Chrome Horizon',
+        customBgImage: '/wallpapers/4d86f61b6c6b7dcb5bce020f2845b1b7.webp',
+        customBgImageName: 'Solaris Flare (9:16)',
+        bgOverlayDim: 30,
+        bgBlur: 0,
       };
       await saveThemeConfig(updated);
       return updated;
     }
 
     const merged: UiThemeConfig = { ...DEFAULT_THEME_CONFIG, ...raw };
+    // Migrate previous default wallpaper to Solaris Flare (9:16)
+    if (
+      !merged.customBgImage ||
+      merged.customBgImage === '/wallpapers/b24802b3051859add5e0bcc7b17800e3.webp' ||
+      merged.customBgImageName === 'Chrome Horizon'
+    ) {
+      merged.customBgImage = '/wallpapers/4d86f61b6c6b7dcb5bce020f2845b1b7.webp';
+      merged.customBgImageName = 'Solaris Flare (9:16)';
+      merged.bgMode = 'image';
+      merged.bgOverlayDim = 30;
+      merged.bgBlur = 0;
+    }
     // Enforce 1px blur and 40px refraction height for liquid crystal glass defaults
     if (merged.liquidGlassMode === 'crystal' || !merged.liquidGlassMode) {
       if (merged.glassBlur === 14 || merged.glassBlur === 3 || typeof merged.glassBlur !== 'number') {

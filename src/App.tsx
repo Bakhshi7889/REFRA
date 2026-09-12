@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroSpotlight } from './components/HeroSpotlight';
 import { ContinueWatching } from './components/ContinueWatching';
@@ -65,7 +65,7 @@ import {
   trackThemeSelection,
 } from './services/analytics';
 import { forceUnlockScroll } from './utils/scrollLock';
-import { initSmoothScroll, scrollToTop } from './utils/smoothScroll';
+import { initSmoothScroll, scrollToTop, subscribeScrollProgress } from './utils/smoothScroll';
 
 export default function App() {
   const [cachedData] = useState(() => getValid6HourCache());
@@ -747,28 +747,73 @@ export default function App() {
   const baseBgColor = isCustomImageActive ? '#060606' : (themeConfig.selectedBgColor || '#0c0d10');
   const activeBgColor = activeTab === 'search' && searchThemeColor ? searchThemeColor : baseBgColor;
 
+  // Background Wallpaper Ref & Scroll Synchronization (PC zoom-at-top to 16:9 and scroll down to the end of the page)
+  const bgImageRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (!isCustomImageActive) return;
+
+    const handleScrollProgress = (progress: number) => {
+      if (!bgImageRef.current) return;
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const isDesktop = vw >= 768;
+
+      // Proportional height for 9:16 vertical wallpaper covering 100vw
+      const naturalHeight = Math.max(vh, vw * (16 / 9));
+      const maxTravel = Math.max(0, naturalHeight - vh);
+
+      // On PC widescreen, full travel from top (0) to bottom (maxTravel)
+      // On mobile portrait, smooth subtle organic parallax
+      const travel = isDesktop ? maxTravel : Math.min(maxTravel, vh * 0.2);
+      const translateY = -progress * travel;
+      const scale = (themeConfig.bgBlur || 0) > 0 ? 1.05 : 1.0;
+
+      bgImageRef.current.style.transform = `translate3d(0, ${translateY.toFixed(2)}px, 0) scale(${scale})`;
+    };
+
+    const unsubscribe = subscribeScrollProgress(handleScrollProgress);
+
+    const onResize = () => {
+      const doc = document.documentElement;
+      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+      const maxScroll = Math.max(1, scrollH - window.innerHeight);
+      const currentScroll = window.scrollY || doc.scrollTop || 0;
+      handleScrollProgress(Math.min(1, Math.max(0, currentScroll / maxScroll)));
+    };
+
+    window.addEventListener('resize', onResize);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('resize', onResize);
+    };
+  }, [isCustomImageActive, themeConfig.bgBlur, themeConfig.customBgImage, activeTab]);
+
   return (
     <div
       className="min-h-screen text-[#f0f2f5] flex justify-center antialiased selection:bg-neutral-800 selection:text-white relative transition-colors duration-700"
       style={{ backgroundColor: activeBgColor }}
     >
-      {/* Dynamic Device Wallpaper Layer (when enabled) */}
+      {/* Dynamic Device Wallpaper Layer (Solaris Flare 9:16 with PC Zoom & Scroll Tracking) */}
       {isCustomImageActive && themeConfig.customBgImage && (
         <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-          <div
-            className="w-full h-full bg-cover bg-center bg-no-repeat transition-[transform] duration-500"
+          <img
+            ref={bgImageRef}
+            src={themeConfig.customBgImage}
+            alt="Cinema Wallpaper"
+            className="w-screen max-w-none absolute left-0 top-0 object-cover object-top will-change-transform pointer-events-none select-none transition-[filter] duration-300"
             style={{
-              backgroundImage: `url(${themeConfig.customBgImage})`,
+              width: '100vw',
+              height: 'max(100vh, calc(100vw * 16 / 9))',
               filter: `blur(${themeConfig.bgBlur || 0}px)`,
-              transform: (themeConfig.bgBlur || 0) > 0 ? 'scale(1.06)' : 'scale(1)',
-              willChange: 'transform',
+              transformOrigin: 'top center',
             }}
           />
           {/* Dimming Scrim for Readability */}
           <div
             className="absolute inset-0 transition-opacity duration-300"
             style={{
-              backgroundColor: `rgba(0, 0, 0, ${(themeConfig.bgOverlayDim ?? 40) / 100})`,
+              backgroundColor: `rgba(0, 0, 0, ${(themeConfig.bgOverlayDim ?? 30) / 100})`,
             }}
           />
         </div>

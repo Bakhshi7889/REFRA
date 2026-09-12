@@ -334,109 +334,89 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         className="hidden"
       />
 
-      {/* ================= SECTION 1: TRAKT.TV ACCOUNT & SYNC ================= */}
-      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4.5 relative overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-        {traktUser ? (
-          /* Signed In with Trakt */
-          <div className="space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img
-                  src={toWebpUrl(traktUser.avatarUrl, 100)}
-                  alt={traktUser.username}
-                  className="w-12 h-12 rounded-2xl object-cover border border-white/10 shrink-0"
-                />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-white">{traktUser.name || traktUser.username}</h3>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-[#ff0040]/20 text-[#ff4b72] border border-[#ff0040]/30 uppercase tracking-wider">
-                      Trakt {traktUser.isVip ? 'VIP' : 'Member'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-0.5">@{traktUser.username} • Joined {traktUser.joinedAt}</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleTraktSignOut}
-                className="p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] text-neutral-400 hover:text-white transition-colors cursor-pointer border border-white/5"
-                title="Disconnect Trakt Account"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Trakt Real Stats Row */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 text-center">
-                <span className="text-[10px] text-neutral-400 font-medium flex items-center justify-center gap-1">
-                  <Film className="w-3 h-3" />
-                  Films Watched
-                </span>
-                <span className="text-sm font-bold text-white mt-0.5 block">
-                  {traktUser.stats?.moviesWatched || 120}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 text-center">
-                <span className="text-[10px] text-neutral-400 font-medium flex items-center justify-center gap-1">
-                  <Flame className="w-3 h-3" />
-                  Episodes
-                </span>
-                <span className="text-sm font-bold text-white mt-0.5 block">
-                  {traktUser.stats?.episodesWatched || 450}
-                </span>
-              </div>
-
-              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 text-center">
-                <span className="text-[10px] text-neutral-400 font-medium flex items-center justify-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  Hours Logged
-                </span>
-                <span className="text-sm font-bold text-white mt-0.5 block">
-                  {Math.round((traktUser.stats?.totalMinutes || 24000) / 60)}h
-                </span>
-              </div>
-            </div>
-
-            {/* Sync Controls */}
-            <div className="flex items-center justify-between pt-1 text-xs">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
-                <Cloud className="w-3.5 h-3.5" />
-                <span>Trakt 2-Way Sync Active</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => syncWithTrakt()}
-                disabled={isSyncing}
-                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shadow-sm"
-              >
-                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Syncing...' : 'Sync Trakt Now'}</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Not Signed In: Clean Trakt Connection Row */
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-2xl bg-[#ff0040]/20 text-[#ff4b72] flex items-center justify-center font-bold">
-                <Cloud className="w-4 h-4" />
-              </div>
-              <div className="text-xs font-semibold text-white">Trakt.tv Sync</div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsSignInModalOpen(true)}
-              className="py-1.5 px-3.5 rounded-full bg-white hover:bg-neutral-200 text-neutral-950 font-semibold text-xs transition-all flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-[0.96]"
+      {/* ================= SECTION 1: DATA SAVER (AT TOP) ================= */}
+      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
+                activeThemeConfig.dataSaverMode
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'bg-white/5 text-neutral-300 border-white/10'
+              }`}
             >
-              <span>Connect</span>
-            </button>
+              <WifiOff className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-white">Data Saver</div>
+              <div className="text-[10px] text-neutral-400">Reduce video resolution & pause auto-play</div>
+            </div>
           </div>
-        )}
+
+          <button
+            type="button"
+            onClick={() => {
+              const nextVal = !activeThemeConfig.dataSaverMode;
+              const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
+              handleThemeChange(nextCfg);
+              if (nextVal) {
+                updateSetting('autoPlayTrailers', false);
+                showToast('Data Saver on');
+              } else {
+                showToast('Data Saver off');
+              }
+            }}
+            className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
+              activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
+            }`}
+            aria-label="Toggle Data Saver"
+          >
+            <div
+              className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
+                activeThemeConfig.dataSaverMode
+                  ? 'translate-x-6 bg-neutral-950'
+                  : 'translate-x-1 bg-neutral-400'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* ================= SECTION 2: TRAKT.TV ACCOUNT & SYNC ================= */}
+      <div
+        onClick={() => {
+          showToast('Feature in progress — Trakt.tv sync is coming soon!');
+        }}
+        className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 relative overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] cursor-pointer hover:border-white/20 transition-all group"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-[#ff0040]/20 text-[#ff4b72] flex items-center justify-center font-bold">
+              <Cloud className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-white flex items-center gap-2">
+                <span>Trakt.tv Sync</span>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">
+                  In Progress
+                </span>
+              </div>
+              <div className="text-[10px] text-neutral-400">Cloud scrobbler & 2-way watchlist</div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              showToast('Feature in progress — Trakt.tv sync is coming soon!');
+            }}
+            className="py-1.5 px-3.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition-all flex items-center gap-1.5 border border-white/10 shadow-sm cursor-pointer active:scale-[0.96]"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            <span>In Progress</span>
+          </button>
+        </div>
       </div>
 
       {/* ================= SECTION 2: UI BACKGROUNDS, FONTS & GLASS SURFACE ================= */}
@@ -630,51 +610,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               />
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* ================= DATA SAVER ================= */}
-      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
-                activeThemeConfig.dataSaverMode
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-white/5 text-neutral-300 border-white/10'
-              }`}
-            >
-              <WifiOff className="w-4 h-4" />
-            </div>
-            <div className="text-xs font-semibold text-white">Data Saver</div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              const nextVal = !activeThemeConfig.dataSaverMode;
-              const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
-              handleThemeChange(nextCfg);
-              if (nextVal) {
-                updateSetting('autoPlayTrailers', false);
-                showToast('Data Saver on');
-              } else {
-                showToast('Data Saver off');
-              }
-            }}
-            className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-              activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
-            }`}
-            aria-label="Toggle Data Saver"
-          >
-            <div
-              className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
-                activeThemeConfig.dataSaverMode
-                  ? 'translate-x-6 bg-neutral-950'
-                  : 'translate-x-1 bg-neutral-400'
-              }`}
-            />
-          </button>
         </div>
       </div>
 

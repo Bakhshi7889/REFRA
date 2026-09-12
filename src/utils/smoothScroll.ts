@@ -3,6 +3,31 @@ import Lenis from 'lenis';
 let lenisInstance: Lenis | null = null;
 let rafId: number | null = null;
 
+type ScrollProgressCallback = (progress: number, scrollY: number) => void;
+const scrollListeners = new Set<ScrollProgressCallback>();
+
+function emitScroll(progress: number, scrollY: number) {
+  scrollListeners.forEach((cb) => {
+    try {
+      cb(progress, scrollY);
+    } catch {}
+  });
+}
+
+export function subscribeScrollProgress(cb: ScrollProgressCallback): () => void {
+  scrollListeners.add(cb);
+  if (typeof window !== 'undefined') {
+    const doc = document.documentElement;
+    const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+    const maxScroll = Math.max(1, scrollH - window.innerHeight);
+    const currentScroll = window.scrollY || doc.scrollTop || 0;
+    cb(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
+  }
+  return () => {
+    scrollListeners.delete(cb);
+  };
+}
+
 /**
  * Initializes fluid, inertial smooth scrolling across the entire application (PC and mobile).
  * Automatically respects prefers-reduced-motion.
@@ -11,7 +36,19 @@ export function initSmoothScroll(): () => void {
   if (typeof window === 'undefined') return () => {};
 
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  if (prefersReducedMotion) return () => {};
+  if (prefersReducedMotion) {
+    const onNativeFallback = () => {
+      const doc = document.documentElement;
+      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+      const maxScroll = Math.max(1, scrollH - window.innerHeight);
+      const currentScroll = window.scrollY || doc.scrollTop || 0;
+      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
+    };
+    window.addEventListener('scroll', onNativeFallback, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onNativeFallback);
+    };
+  }
 
   if (lenisInstance) {
     try {
@@ -33,6 +70,22 @@ export function initSmoothScroll(): () => void {
 
   lenisInstance = lenis;
 
+  lenis.on('scroll', (e: any) => {
+    const progress = typeof e.progress === 'number' ? e.progress : (e.scroll / (e.limit || 1));
+    emitScroll(Math.min(1, Math.max(0, progress)), e.scroll);
+  });
+
+  const onNativeScroll = () => {
+    if (!lenisInstance) {
+      const doc = document.documentElement;
+      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+      const maxScroll = Math.max(1, scrollH - window.innerHeight);
+      const currentScroll = window.scrollY || doc.scrollTop || 0;
+      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
+    }
+  };
+  window.addEventListener('scroll', onNativeScroll, { passive: true });
+
   function raf(time: number) {
     lenis.raf(time);
     rafId = requestAnimationFrame(raf);
@@ -40,6 +93,7 @@ export function initSmoothScroll(): () => void {
   rafId = requestAnimationFrame(raf);
 
   return () => {
+    window.removeEventListener('scroll', onNativeScroll);
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;
