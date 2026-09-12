@@ -17,7 +17,6 @@
 - **4K Movie & TV Discovery**: Real-time trending, spotlight picks, top-rated movies, TV series, Indian cinema, and curated collections.
 - **Trending Anime Hub**: Comprehensive anime discovery powered by TMDB and AniList GraphQL with full episode and season tracking.
 - **Ad-Free Embedded Player**: Seamless multi-source video player with quick-switching mirrors, episode navigators, and full-screen support.
-- **Gemini AI Cinema Assistant**: Smart semantic movie suggestions, natural language mood searches, and personalized recommendations powered by `@google/genai`.
 - **Liquid Glass Aesthetic**: Handcrafted UI featuring SVG fractal noise displacement (`feTurbulence`), subtle specular lighting, squircle geometries, and fluid spring animations.
 - **Universal Image Proxy & Resilient Fallback**: Auto-detects blocked CDNs (e.g. ISP blocks) and routes through a high-speed server-side image proxy (`/api/image`) with inline SVG fallbacks.
 - **Diagnostics & Network Sandbox**: Built-in visual latency testing for Direct TMDB CDN vs. Server Proxy, along with one-click cache purging.
