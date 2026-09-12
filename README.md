@@ -7,7 +7,7 @@
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF.svg?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-38bdf8.svg?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Express](https://img.shields.io/badge/Express-4.21-lightgrey.svg?logo=express&logoColor=black)](https://expressjs.com/)
-[![Gemini AI](https://img.shields.io/badge/Google_Gemini-2.5_Flash-8e44ad.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Gemini AI](https://img.shields.io/badge/Google_Gemini-3.8_Flash-8e44ad.svg?logo=google&logoColor=white)](https://ai.google.dev/)
 [![PWA Ready](https://img.shields.io/badge/PWA-Offline_First-5A0FC8.svg?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 
 ---
@@ -81,16 +81,19 @@ Note: The application includes built-in fallback catalogs, so it will still laun
 Bash
 npm run dev
 Open http://localhost:3000 in your browser.
+
 📦 Build & Production
 Compile for Production
 Bash
 npm run build
 This compiles the Vite frontend into dist/ and bundles server.ts into a self-contained CommonJS binary at dist/server.cjs via esbuild.
+
 Start Production Server
 code
 Bash
 npm start
 The server binds to 0.0.0.0:3000.
+
 📁 Project Structure
 code
 Code
@@ -117,6 +120,10 @@ REFRA/
 ├── serverApp.ts            # Server-side API endpoints & proxies
 ├── .env.example            # Sample environment variables
 └── package.json            # Scripts and dependencies
+
+
+
+
 📜 License
 This project is licensed under the MIT License.
 🤝 Contributing
