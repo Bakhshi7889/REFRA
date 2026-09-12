@@ -273,6 +273,11 @@ export function clear6HourCache(): void {
   } catch {
     // ignore
   }
+  try {
+    saveIndexedDbSetting('refra_catalog_cache', null);
+  } catch {
+    // ignore
+  }
 }
 
 /**

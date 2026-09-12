@@ -1,8 +1,8 @@
-// Refra Cinema PWA Service Worker v7 - Direct CDN & High Performance Offline-First
-const SHELL_CACHE = 'refra-shell-v7';
-const ASSETS_CACHE = 'refra-assets-v7';
-const ICONS_IMAGES_CACHE = 'refra-icons-images-v7';
-const DATA_CACHE = 'refra-api-data-v7';
+// Refra Cinema PWA Service Worker v8 - Direct CDN & High Performance Offline-First
+const SHELL_CACHE = 'refra-shell-v8';
+const ASSETS_CACHE = 'refra-assets-v8';
+const ICONS_IMAGES_CACHE = 'refra-icons-images-v8';
+const DATA_CACHE = 'refra-api-data-v8';
 
 const CURRENT_CACHES = [SHELL_CACHE, ASSETS_CACHE, ICONS_IMAGES_CACHE, DATA_CACHE];
 
@@ -120,9 +120,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Cross-origin TMDB images: bypass Service Worker interception so that native browser network errors
+  // 2. Cross-origin TMDB and anime CDNs: bypass Service Worker interception so that native browser network errors
   // cleanly trigger React <img onError> and route immediately via /api/image server proxy
-  if (url.hostname.includes('image.tmdb.org')) {
+  if (
+    url.hostname.includes('image.tmdb.org') ||
+    url.hostname.includes('anilist.co') ||
+    url.hostname.includes('myanimelist.net')
+  ) {
     return;
   }
 

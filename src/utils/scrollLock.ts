@@ -1,6 +1,8 @@
 // Centralized Scroll Lock Manager with reference counting
 // Prevents scroll freezing when chaining modals (MovieDetails -> VideoPlayer -> ServerSelector)
 
+import { pauseSmoothScroll, resumeSmoothScroll } from './smoothScroll';
+
 let activeLocks = 0;
 
 export function lockScroll(): () => void {
@@ -8,6 +10,7 @@ export function lockScroll(): () => void {
   if (activeLocks === 1) {
     document.documentElement.classList.add('scroll-locked');
     document.body.classList.add('scroll-locked');
+    pauseSmoothScroll();
   }
 
   let released = false;
@@ -21,6 +24,7 @@ export function lockScroll(): () => void {
       document.documentElement.style.removeProperty('overflow');
       document.body.style.removeProperty('overflow');
       document.body.style.removeProperty('overscroll-behavior');
+      resumeSmoothScroll();
     }
   };
 }
@@ -32,4 +36,5 @@ export function forceUnlockScroll() {
   document.documentElement.style.removeProperty('overflow');
   document.body.style.removeProperty('overflow');
   document.body.style.removeProperty('overscroll-behavior');
+  resumeSmoothScroll();
 }

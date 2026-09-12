@@ -86,6 +86,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
 
       <div
         ref={scrollRef}
+        data-lenis-prevent="true"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

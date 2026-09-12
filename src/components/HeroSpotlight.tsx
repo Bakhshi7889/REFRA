@@ -23,12 +23,20 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   isActive = true,
 }) => {
   const isDataSaver = isDataSaverActive();
-  const spotlightMovies = useMemo(
-    () => movies.filter((m) => m.spotlight || m.featured).slice(0, 6),
-    [movies]
-  );
+  const spotlightMovies = useMemo(() => {
+    if (!movies || movies.length === 0) return [];
+    const filtered = movies.filter((m) => m.spotlight || m.featured);
+    return (filtered.length > 0 ? filtered : movies).slice(0, 5);
+  }, [movies]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeBackdropIdx, setActiveBackdropIdx] = useState(0);
+
+  // Automatically reset to the first film whenever the spotlight catalog changes (e.g. region switch)
+  useEffect(() => {
+    setCurrentIndex(0);
+    setActiveBackdropIdx(0);
+  }, [spotlightMovies.map((m) => m.id).join(',')]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const lastWheelTimeRef = useRef(0);
@@ -47,7 +55,8 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const activeMovie = spotlightMovies[currentIndex] || movies[0];
+  const safeIndex = currentIndex < spotlightMovies.length ? currentIndex : 0;
+  const activeMovie = spotlightMovies[safeIndex] || movies[0];
   const isSaved = watchlist.includes(activeMovie?.id);
   const [logoFailed, setLogoFailed] = useState(false);
 

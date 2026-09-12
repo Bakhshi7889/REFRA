@@ -195,7 +195,25 @@ export async function handleImageOptimization(req: Request, res: Response): Prom
     clearTimeout(timeout);
 
     if (!fetchResponse.ok) {
-      console.warn(`[ImageOptimizer] Source image ${targetUrl} returned HTTP ${fetchResponse.status}`);
+      console.warn(`[ImageOptimizer] Source image ${targetUrl} returned HTTP ${fetchResponse.status}, falling back to Cloudflare Edge Mirror`);
+      try {
+        const edgeRes = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(targetUrl)}&output=webp`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
+        });
+        if (edgeRes.ok) {
+          const edgeArr = await edgeRes.arrayBuffer();
+          const edgeBuf = Buffer.from(edgeArr);
+          setInCache(cacheKey, edgeBuf);
+          res.setHeader('Content-Type', 'image/webp');
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('X-Image-Source', 'Edge-Mirror');
+          res.send(edgeBuf);
+          return;
+        }
+      } catch {}
+
       const fallbackBuffer = await generateFallbackWebp(Boolean(isBackdrop));
       res.setHeader('Content-Type', 'image/webp');
       res.setHeader('Cache-Control', 'public, max-age=3600');
@@ -232,6 +250,20 @@ export async function handleImageOptimization(req: Request, res: Response): Prom
     res.send(webpBuffer);
   } catch (err: any) {
     console.error(`[ImageOptimizer] Error converting ${targetUrl}:`, err?.message || err);
+    // Cloudflare edge mirror failover if sharp or node environment errored
+    try {
+      const edgeRes = await fetch(`https://wsrv.nl/?url=${encodeURIComponent(targetUrl)}&output=webp`);
+      if (edgeRes.ok) {
+        const edgeArr = await edgeRes.arrayBuffer();
+        const edgeBuf = Buffer.from(edgeArr);
+        res.setHeader('Content-Type', 'image/webp');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.setHeader('X-Image-Source', 'Edge-Mirror-Recovery');
+        res.send(edgeBuf);
+        return;
+      }
+    } catch {}
+
     const fallbackBuffer = await generateFallbackWebp(Boolean(isBackdrop));
     res.setHeader('Content-Type', 'image/webp');
     res.setHeader('Cache-Control', 'public, max-age=3600');

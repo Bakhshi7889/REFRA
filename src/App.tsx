@@ -65,6 +65,7 @@ import {
   trackThemeSelection,
 } from './services/analytics';
 import { forceUnlockScroll } from './utils/scrollLock';
+import { initSmoothScroll, scrollToTop } from './utils/smoothScroll';
 
 export default function App() {
   const [cachedData] = useState(() => getValid6HourCache());
@@ -128,6 +129,7 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    const cleanupScroll = initSmoothScroll();
     initGoogleAnalytics();
     loadSavedThemeConfig().then((cfg) => {
       if (isMounted) {
@@ -137,6 +139,7 @@ export default function App() {
     });
     return () => {
       isMounted = false;
+      cleanupScroll();
     };
   }, []);
 
@@ -356,21 +359,22 @@ export default function App() {
       loadIndiaData();
     }
 
-    const handleRegionChanged = async () => {
+    const handleRegionChanged = async (e?: any) => {
       clearMovieApiCache();
+      const customRegion = e?.detail?.region;
       const regionInfo = getUserRegionInfo();
-      const updatedReg = regionInfo?.code || 'GLOBAL';
+      const updatedReg = customRegion || regionInfo?.code || 'GLOBAL';
       setUserRegionState(updatedReg);
       try {
         const [spotlights, trending, topRated] = await Promise.all([
-          fetchSpotlightMovies(),
-          fetchTrendingMovies(),
-          fetchTopRatedMovies(),
+          fetchSpotlightMovies(updatedReg, true),
+          fetchTrendingMovies(updatedReg, true),
+          fetchTopRatedMovies(updatedReg, true),
         ]);
         if (isMounted) {
-          if (spotlights.length > 0) setSpotlightMovies(spotlights);
-          if (trending.length > 0) setTrendingMovies(trending);
-          if (topRated.length > 0) setTopRatedMovies(topRated);
+          if (spotlights && spotlights.length > 0) setSpotlightMovies(spotlights);
+          if (trending && trending.length > 0) setTrendingMovies(trending);
+          if (topRated && topRated.length > 0) setTopRatedMovies(topRated);
         }
         if (updatedReg === 'IN') {
           loadIndiaData();
@@ -379,6 +383,20 @@ export default function App() {
           setBollywoodMovies([]);
           setSouthMovies([]);
           setIndiaSeries([]);
+        }
+        // Persist to 6-hour cache so reload retains regional spotlight
+        if (spotlights && spotlights.length > 0) {
+          save6HourCache({
+            spotlightMovies: spotlights,
+            trendingMovies: trending && trending.length > 0 ? trending : trendingMovies,
+            animeMovies,
+            topRatedMovies: topRated && topRated.length > 0 ? topRated : topRatedMovies,
+            scifiMovies,
+            indiaTrending: updatedReg === 'IN' ? indiaTrending : [],
+            bollywoodMovies: updatedReg === 'IN' ? bollywoodMovies : [],
+            southMovies: updatedReg === 'IN' ? southMovies : [],
+            indiaSeries: updatedReg === 'IN' ? indiaSeries : [],
+          });
         }
       } catch (err) {
         console.warn('Region feed reload error:', err);
@@ -950,10 +968,10 @@ export default function App() {
           activeTab={activeTab}
           onTabChange={(tab) => {
             if (tab === activeTab) {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              scrollToTop();
             } else {
               setActiveTab(tab);
-              window.scrollTo(0, 0);
+              scrollToTop();
             }
           }}
           watchlistCount={watchlist.length}

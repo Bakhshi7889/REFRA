@@ -359,11 +359,11 @@ export interface UiThemeConfig {
   dataSaverMode: boolean; // Low-bandwidth optimization: pauses idle cycling, disables trailer autoplay, uses compressed w185/w342 posters, disables aggressive preloading
 
   // Image Delivery Routing & Resolution Settings
-  imageRoutingMode?: 'auto' | 'proxy' | 'direct'; // 'auto' (failover to proxy) | 'proxy' (force server proxy) | 'direct' (TMDB CDN only)
+  imageRoutingMode?: 'anime_edge' | 'auto' | 'proxy' | 'direct'; // 'anime_edge' (Anime-style Cloudflare CDN mirror) | 'auto' (failover) | 'proxy' (force server proxy) | 'direct' (TMDB CDN only)
   imageResolutionQuality?: 'auto' | 'ultra' | 'high' | 'balanced' | 'compact';
 }
 
-export type ImageRoutingMode = 'auto' | 'proxy' | 'direct';
+export type ImageRoutingMode = 'anime_edge' | 'auto' | 'proxy' | 'direct';
 export type ImageResolutionQuality = 'auto' | 'ultra' | 'high' | 'balanced' | 'compact';
 
 export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
@@ -389,7 +389,7 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   glassClarity: 'crystalClear',
   glassWhiteWash: 0,
   dataSaverMode: false,
-  imageRoutingMode: 'auto',
+  imageRoutingMode: 'anime_edge',
   imageResolutionQuality: 'auto',
 };
 
@@ -627,6 +627,15 @@ export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
         merged.refractionHeight = 40;
       }
     }
+    // Enforce anime_edge routing mode across all devices
+    if (
+      merged.imageRoutingMode === 'direct' ||
+      merged.imageRoutingMode === 'proxy' ||
+      merged.imageRoutingMode === 'auto' ||
+      !merged.imageRoutingMode
+    ) {
+      merged.imageRoutingMode = 'anime_edge';
+    }
     return merged;
   } catch (err) {
     console.warn('Load theme config notice:', err);
@@ -688,18 +697,27 @@ export async function setDataSaverMode(enabled: boolean): Promise<UiThemeConfig>
 }
 
 /**
- * Gets the current image routing mode ('auto' | 'proxy' | 'direct')
+ * Gets the current image routing mode ('anime_edge' | 'auto' | 'proxy' | 'direct')
  */
 export function getImageRoutingMode(): ImageRoutingMode {
-  if (typeof window === 'undefined') return 'auto';
+  if (typeof window === 'undefined') return 'anime_edge';
   try {
     const raw = localStorage.getItem('refra_ui_theme_config');
     if (raw) {
       const cfg = JSON.parse(raw);
-      if (cfg.imageRoutingMode) return cfg.imageRoutingMode;
+      if (cfg.imageRoutingMode) {
+        if (
+          cfg.imageRoutingMode === 'direct' ||
+          cfg.imageRoutingMode === 'proxy' ||
+          cfg.imageRoutingMode === 'auto'
+        ) {
+          return 'anime_edge';
+        }
+        return cfg.imageRoutingMode;
+      }
     }
   } catch {}
-  return 'auto';
+  return 'anime_edge';
 }
 
 /**

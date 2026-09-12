@@ -189,6 +189,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
         {/* Posters Carousel with Drag-to-Scroll and Touch Support */}
         <div
           ref={scrollRef}
+          data-lenis-prevent="true"
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

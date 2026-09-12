@@ -25,6 +25,14 @@ export const app = express();
 // Disable express server banner to prevent targeted banner grabbing
 app.disable('x-powered-by');
 
+// Normalize Netlify serverless path rewrite so /.netlify/functions/api/* maps to /api/*
+app.use((req, res, next) => {
+  if (req.url.startsWith('/.netlify/functions/api')) {
+    req.url = req.url.replace('/.netlify/functions/api', '/api');
+  }
+  next();
+});
+
 // Enforce HTTPS
 app.use(forceHttpsMiddleware);
 
@@ -37,6 +45,9 @@ app.use(botAndWafProtectionMiddleware);
 // File upload payload restriction
 app.use(restrictUploadsMiddleware);
 
+// Parse JSON with 500kb limit to protect against large memory exhaustion payloads
+app.use(express.json({ limit: '500kb' }));
+
 // High-capacity Image Rate Limiter (3,000 requests / minute) for WebP image proxying
 const imageRateLimiter = createRateLimiter({
   maxRequests: 3000,
@@ -45,19 +56,6 @@ const imageRateLimiter = createRateLimiter({
 });
 app.get('/api/image', imageRateLimiter, handleImageOptimization);
 app.get('/api/image-proxy', imageRateLimiter, handleImageOptimization);
-
-// Global API rate limiter: 150 requests / minute per IP for data endpoints
-
-// Parse JSON with 500kb limit to protect against large memory exhaustion payloads
-app.use(express.json({ limit: '500kb' }));
-
-// Normalize Netlify serverless path rewrite so /.netlify/functions/api/* maps to /api/*
-app.use((req, res, next) => {
-  if (req.url.startsWith('/.netlify/functions/api')) {
-    req.url = req.url.replace('/.netlify/functions/api', '/api');
-  }
-  next();
-});
 
 // Global API rate limiter: 150 requests / minute per IP for data endpoints (excluding images)
 const apiRateLimiter = createRateLimiter({
@@ -156,7 +154,9 @@ app.use((req, res, next) => {
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
         return cache[cacheKey].data;
       }
-      const res = await fetch(`https://webservice.fanart.tv/v3/movies/${tmdbId}?api_key=${FANART_KEY}`);
+      const res = await fetch(`https://webservice.fanart.tv/v3/movies/${tmdbId}?api_key=${FANART_KEY}`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (!res.ok) return null;
       const data = await res.json();
       cache[cacheKey] = { data, timestamp: Date.now() };
@@ -173,7 +173,9 @@ app.use((req, res, next) => {
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
         return cache[cacheKey].data;
       }
-      const res = await fetch(`https://api.kinocheck.de/trailers?tmdb_id=${tmdbId}`);
+      const res = await fetch(`https://api.kinocheck.de/trailers?tmdb_id=${tmdbId}`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (!res.ok) return null;
       const data = await res.json();
       cache[cacheKey] = { data, timestamp: Date.now() };
@@ -192,7 +194,9 @@ app.use((req, res, next) => {
       if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
         return cache[cacheKey].data;
       }
-      const res = await fetch(`https://www.omdbapi.com/?${param}&apikey=${OMDB_KEY}`);
+      const res = await fetch(`https://www.omdbapi.com/?${param}&apikey=${OMDB_KEY}`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (!res.ok) return null;
       const data = await res.json();
       cache[cacheKey] = { data, timestamp: Date.now() };
@@ -248,11 +252,15 @@ app.use((req, res, next) => {
           }
         }
       `;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000); // 2s fast timeout
       const res = await fetch('https://graphql.anilist.co', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ query, variables: { page: 1, perPage } }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (!res.ok) return null;
       const data = await res.json();
       const media = data?.data?.Page?.media || null;
@@ -381,7 +389,7 @@ app.use((req, res, next) => {
       tmdbMovie.media_type === 'tv'
     );
 
-    if (fullDetails || (!tmdbMovie.runtime && !tmdbMovie.episode_run_time && !tmdbMovie.number_of_seasons)) {
+    if (fullDetails) {
       try {
         const endpoint = isTv ? 'tv' : 'movie';
         const detRes = await fetch(
@@ -395,11 +403,13 @@ app.use((req, res, next) => {
       }
     }
 
-    const [fanartData, kinoTrailerId, omdbData] = await Promise.all([
-      getFanartData(tmdbId),
-      getKinoCheckTrailer(tmdbId),
-      details.imdb_id ? getOmdbData(details.imdb_id, details.title || details.name) : Promise.resolve(null),
-    ]);
+    const [fanartData, kinoTrailerId, omdbData] = fullDetails
+      ? await Promise.all([
+          getFanartData(tmdbId),
+          getKinoCheckTrailer(tmdbId),
+          details.imdb_id ? getOmdbData(details.imdb_id, details.title || details.name) : Promise.resolve(null),
+        ])
+      : [null, null, null];
 
     // Backdrops aggregation (TMDB + Fanart.tv)
     const backdrops: string[] = [];
@@ -681,16 +691,45 @@ app.use((req, res, next) => {
   app.get('/api/movies/spotlight', async (req, res) => {
     try {
       const rawRegion = req.query.region as string;
-      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cacheKey = `server_spotlight_${cleanRegion || 'global'}`;
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
+        return res.json({ movies: cache[cacheKey].data });
+      }
+
       const url = cleanRegion
         ? `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=1&region=${cleanRegion}`
         : `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
       const data = await response.json();
-      const topItems = (data.results || []).slice(0, 5);
+      let topItems = (data.results || []).slice(0, 5);
 
-      const movies = await Promise.all(topItems.map((m: any) => formatTmdbMovie(m, true)));
+      // If regional now_playing returned fewer than 5 items, fallback to global trending to always have 5
+      if (topItems.length < 5) {
+        try {
+          const fbRes = await fetch(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}`);
+          if (fbRes.ok) {
+            const fbData = await fbRes.json();
+            const existingIds = new Set(topItems.map((m: any) => m.id));
+            for (const fbMovie of (fbData.results || [])) {
+              if (topItems.length >= 5) break;
+              if (!existingIds.has(fbMovie.id)) {
+                topItems.push(fbMovie);
+                existingIds.add(fbMovie.id);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      const movies = await Promise.all(
+        topItems.map(async (m: any) => {
+          const formatted = await formatTmdbMovie(m, true);
+          return { ...formatted, spotlight: true, featured: true };
+        })
+      );
+      cache[cacheKey] = { data: movies, timestamp: Date.now() };
       res.json({ movies });
     } catch (err: any) {
       console.error('Error fetching spotlight:', err.message);
@@ -701,7 +740,12 @@ app.use((req, res, next) => {
   app.get('/api/movies/trending', async (req, res) => {
     try {
       const rawRegion = req.query.region as string;
-      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cacheKey = `server_trending_${cleanRegion || 'global'}`;
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
+        return res.json({ movies: cache[cacheKey].data });
+      }
+
       const url = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&page=1${cleanRegion ? `&region=${cleanRegion}` : ''}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
@@ -709,6 +753,7 @@ app.use((req, res, next) => {
       const items = (data.results || []).slice(0, 15);
 
       const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      cache[cacheKey] = { data: movies, timestamp: Date.now() };
       res.json({ movies });
     } catch (err: any) {
       console.error('Error fetching trending:', err.message);
@@ -719,7 +764,12 @@ app.use((req, res, next) => {
   app.get('/api/movies/top_rated', async (req, res) => {
     try {
       const rawRegion = req.query.region as string;
-      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cleanRegion = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion.toUpperCase().slice(0, 2) : '';
+      const cacheKey = `server_top_rated_${cleanRegion || 'global'}`;
+      if (cache[cacheKey] && Date.now() - cache[cacheKey].timestamp < CACHE_TTL) {
+        return res.json({ movies: cache[cacheKey].data });
+      }
+
       const url = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}&page=1${cleanRegion ? `&region=${cleanRegion}` : ''}`;
       const response = await fetch(url);
       if (!response.ok) throw new Error('TMDB error');
@@ -727,6 +777,7 @@ app.use((req, res, next) => {
       const items = (data.results || []).slice(0, 15);
 
       const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      cache[cacheKey] = { data: movies, timestamp: Date.now() };
       res.json({ movies });
     } catch (err: any) {
       console.error('Error fetching top rated:', err.message);
@@ -743,14 +794,21 @@ app.use((req, res, next) => {
         return res.json({ movies: formatted });
       }
 
-      // 2. Fallback to TMDB anime feature films
-      const url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=100`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('TMDB error');
-      const data = await response.json();
-      const items = (data.results || []).slice(0, 15);
+      // 2. High-reliability TMDB Anime: Trending Japanese Anime Series + Feature Films
+      const [tvRes, movieRes] = await Promise.all([
+        fetch(
+          `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=50`
+        ).then((r) => (r.ok ? r.json() : { results: [] })).catch(() => ({ results: [] })),
+        fetch(
+          `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=50`
+        ).then((r) => (r.ok ? r.json() : { results: [] })).catch(() => ({ results: [] })),
+      ]);
 
-      const movies = await Promise.all(items.map((m: any) => formatTmdbMovie(m, false)));
+      const tvItems = (tvRes.results || []).slice(0, 10).map((m: any) => ({ ...m, media_type: 'tv' }));
+      const movieItems = (movieRes.results || []).slice(0, 8).map((m: any) => ({ ...m, media_type: 'movie' }));
+      const combined = [...tvItems, ...movieItems].filter((x) => x.poster_path);
+
+      const movies = await Promise.all(combined.map((m: any) => formatTmdbMovie(m, false)));
       res.json({ movies });
     } catch (err: any) {
       console.error('Error fetching anime:', err.message);

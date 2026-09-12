@@ -20,6 +20,36 @@ const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 hours
 
 export function clearMovieApiCache(): void {
   clientCache = {};
+  invalidateSWR();
+  if (typeof window !== 'undefined') {
+    try {
+      const sessionKeys: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && (k.startsWith('refra_api_') || k.startsWith('refra_swr_'))) {
+          sessionKeys.push(k);
+        }
+      }
+      sessionKeys.forEach((k) => sessionStorage.removeItem(k));
+    } catch {}
+
+    try {
+      const localKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (
+          k &&
+          (k.startsWith('refra_api_') ||
+            k.startsWith('refra_swr_') ||
+            k.startsWith('direct_anilist_') ||
+            k.startsWith('api_cache_'))
+        ) {
+          localKeys.push(k);
+        }
+      }
+      localKeys.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+  }
 }
 
 function getPersistentApiCache(key: string): any | null {
@@ -501,143 +531,160 @@ async function directFetchAniList(perPage = 16): Promise<Movie[]> {
     console.warn('AniList fetch notice:', err);
   }
 
-  // Fallback to stale cached or anime from fallback movies
-  if (clientCache[cacheKey]?.data) {
-    return clientCache[cacheKey].data;
-  }
-  if (persisted) {
-    return persisted;
-  }
-
-  return FALLBACK_MOVIES.filter((m) => m.genres.includes('Animation'));
+  // Fallback to empty array so caller can fall back to TMDB Anime
+  return [];
 }
 
 // ---------------- PUBLIC EXPORTED FUNCTIONS ----------------
 
-export async function fetchSpotlightMovies(regionOverride?: string): Promise<Movie[]> {
+export async function fetchSpotlightMovies(
+  regionOverride?: string,
+  forceRefresh = false
+): Promise<Movie[]> {
   const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
-  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
+  const region = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion : '';
   const cacheKey = `spotlight_${region || 'global'}`;
 
-  return swrFetch(cacheKey, async () => {
-    const hasServer = await checkServerAvailable();
-    if (hasServer) {
-      try {
-        const url = region ? `/api/movies/spotlight?region=${region}` : '/api/movies/spotlight';
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.movies && data.movies.length > 0) return data.movies;
-        }
-      } catch {
-        isServerAvailable = false;
-      }
-    }
-
-    try {
-      const endpoint = region ? `movie/now_playing?region=${region}&page=1` : 'trending/movie/week';
-      let directMovies = await directFetchTmdbMovies(endpoint);
-      if (directMovies.length === 0 && region) {
-        directMovies = await directFetchTmdbMovies('trending/movie/week');
-      }
-      if (directMovies.length > 0) {
-        const top5 = directMovies.slice(0, 5);
-        const enriched = await Promise.all(
-          top5.map(async (movie) => {
-            if (movie.logoUrl || !movie.tmdbId) return movie;
-            try {
-              const isTv = movie.id?.includes('tv') || movie.mediaType === 'tv';
-              const imgData = await directFetchTmdbRaw(`${isTv ? 'tv' : 'movie'}/${movie.tmdbId}/images`);
-              if (imgData?.logos && imgData.logos.length > 0) {
-                const enLogo =
-                  imgData.logos.find((l: any) => l.iso_639_1 === 'en') ||
-                  imgData.logos.find((l: any) => !l.iso_639_1) ||
-                  [...imgData.logos].sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0))[0];
-                if (enLogo?.file_path) {
-                  return {
-                    ...movie,
-                    logoUrl: `https://image.tmdb.org/t/p/w500${enLogo.file_path}`,
-                  };
-                }
-              }
-            } catch {
-              // Ignore image lookup errors
+  return swrFetch(
+    cacheKey,
+    async () => {
+      const hasServer = await checkServerAvailable();
+      if (hasServer) {
+        try {
+          const url = region ? `/api/movies/spotlight?region=${region}` : '/api/movies/spotlight';
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.movies && data.movies.length > 0) {
+              return data.movies.map((m: any) => ({ ...m, spotlight: true, featured: true }));
             }
-            return movie;
-          })
-        );
-        return enriched;
+          }
+        } catch {
+          isServerAvailable = false;
+        }
       }
-    } catch (err) {
-      console.warn('Direct TMDB spotlight error:', err);
-    }
 
-    return FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured);
-  });
+      try {
+        const endpoint = region ? `movie/now_playing?region=${region}&page=1` : 'trending/movie/week';
+        let directMovies = await directFetchTmdbMovies(endpoint);
+        if (directMovies.length === 0 && region) {
+          directMovies = await directFetchTmdbMovies('trending/movie/week');
+        }
+        if (directMovies.length > 0) {
+          const top5 = directMovies.slice(0, 5);
+          const enriched = await Promise.all(
+            top5.map(async (movie) => {
+              const m = { ...movie, spotlight: true, featured: true };
+              if (m.logoUrl || !m.tmdbId) return m;
+              try {
+                const isTv = m.id?.includes('tv') || m.mediaType === 'tv';
+                const imgData = await directFetchTmdbRaw(`${isTv ? 'tv' : 'movie'}/${m.tmdbId}/images`);
+                if (imgData?.logos && imgData.logos.length > 0) {
+                  const enLogo =
+                    imgData.logos.find((l: any) => l.iso_639_1 === 'en') ||
+                    imgData.logos.find((l: any) => !l.iso_639_1) ||
+                    [...imgData.logos].sort((a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0))[0];
+                  if (enLogo?.file_path) {
+                    return {
+                      ...m,
+                      logoUrl: `https://image.tmdb.org/t/p/w500${enLogo.file_path}`,
+                    };
+                  }
+                }
+              } catch {
+                // Ignore image lookup errors
+              }
+              return m;
+            })
+          );
+          return enriched;
+        }
+      } catch (err) {
+        console.warn('Direct TMDB spotlight error:', err);
+      }
+
+      return FALLBACK_MOVIES.filter((m) => m.spotlight || m.featured);
+    },
+    { forceRevalidate: forceRefresh }
+  );
 }
 
-export async function fetchTrendingMovies(regionOverride?: string): Promise<Movie[]> {
+export async function fetchTrendingMovies(
+  regionOverride?: string,
+  forceRefresh = false
+): Promise<Movie[]> {
   const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
-  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
+  const region = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion : '';
   const cacheKey = `trending_${region || 'global'}`;
 
-  return swrFetch(cacheKey, async () => {
-    const hasServer = await checkServerAvailable();
-    if (hasServer) {
-      try {
-        const url = region ? `/api/movies/trending?region=${region}` : '/api/movies/trending';
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.movies && data.movies.length > 0) return data.movies;
+  return swrFetch(
+    cacheKey,
+    async () => {
+      const hasServer = await checkServerAvailable();
+      if (hasServer) {
+        try {
+          const url = region ? `/api/movies/trending?region=${region}` : '/api/movies/trending';
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.movies && data.movies.length > 0) return data.movies;
+          }
+        } catch {
+          isServerAvailable = false;
         }
-      } catch {
-        isServerAvailable = false;
       }
-    }
 
-    try {
-      const endpoint = region ? `movie/popular?region=${region}&page=1` : 'movie/popular?page=1';
-      const directMovies = await directFetchTmdbMovies(endpoint);
-      if (directMovies.length > 0) return directMovies;
-    } catch (err) {
-      console.warn('Direct TMDB trending error:', err);
-    }
+      try {
+        const endpoint = region ? `movie/popular?region=${region}&page=1` : 'movie/popular?page=1';
+        const directMovies = await directFetchTmdbMovies(endpoint);
+        if (directMovies.length > 0) return directMovies;
+      } catch (err) {
+        console.warn('Direct TMDB trending error:', err);
+      }
 
-    return FALLBACK_MOVIES;
-  });
+      return FALLBACK_MOVIES;
+    },
+    { forceRevalidate: forceRefresh }
+  );
 }
 
-export async function fetchTopRatedMovies(regionOverride?: string): Promise<Movie[]> {
+export async function fetchTopRatedMovies(
+  regionOverride?: string,
+  forceRefresh = false
+): Promise<Movie[]> {
   const rawRegion = regionOverride !== undefined ? regionOverride : getUserRegion();
-  const region = rawRegion && rawRegion !== 'GLOBAL' ? rawRegion : '';
+  const region = rawRegion && rawRegion !== 'GLOBAL' && rawRegion !== 'AUTO' ? rawRegion : '';
   const cacheKey = `top_rated_${region || 'global'}`;
 
-  return swrFetch(cacheKey, async () => {
-    const hasServer = await checkServerAvailable();
-    if (hasServer) {
-      try {
-        const url = region ? `/api/movies/top_rated?region=${region}` : '/api/movies/top_rated';
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.movies && data.movies.length > 0) return data.movies;
+  return swrFetch(
+    cacheKey,
+    async () => {
+      const hasServer = await checkServerAvailable();
+      if (hasServer) {
+        try {
+          const url = region ? `/api/movies/top_rated?region=${region}` : '/api/movies/top_rated';
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.movies && data.movies.length > 0) return data.movies;
+          }
+        } catch {
+          isServerAvailable = false;
         }
-      } catch {
-        isServerAvailable = false;
       }
-    }
 
-    try {
-      const endpoint = region ? `movie/top_rated?region=${region}&page=1` : 'movie/top_rated?page=1';
-      const directMovies = await directFetchTmdbMovies(endpoint);
-      if (directMovies.length > 0) return directMovies;
-    } catch (err) {
-      console.warn('Direct TMDB top rated error:', err);
-    }
+      try {
+        const endpoint = region ? `movie/top_rated?region=${region}&page=1` : 'movie/top_rated?page=1';
+        const directMovies = await directFetchTmdbMovies(endpoint);
+        if (directMovies.length > 0) return directMovies;
+      } catch (err) {
+        console.warn('Direct TMDB top rated error:', err);
+      }
 
-    return FALLBACK_MOVIES.slice(2);
-  });
+      return FALLBACK_MOVIES;
+    },
+    { forceRevalidate: forceRefresh }
+  );
 }
 
 export async function fetchAnimeMovies(): Promise<Movie[]> {
@@ -655,20 +702,22 @@ export async function fetchAnimeMovies(): Promise<Movie[]> {
       }
     }
 
-    // 1. Try AniList GraphQL first for real trending anime
+    // 1. High-reliability Direct TMDB Anime: Trending Japanese anime TV series and movies
+    try {
+      const [tvAnime, movieAnime] = await Promise.all([
+        directFetchTmdbMovies('discover/tv?with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=30'),
+        directFetchTmdbMovies('discover/movie?with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=30'),
+      ]);
+      const combined = [...tvAnime.slice(0, 10), ...movieAnime.slice(0, 8)].filter((m) => m.posterUrl);
+      if (combined.length > 0) return combined;
+    } catch (err) {
+      console.warn('Direct TMDB anime error:', err);
+    }
+
+    // 2. AniList GraphQL secondary fallback
     try {
       const directAnime = await directFetchAniList(16);
       if (directAnime.length > 0) return directAnime;
-    } catch {
-      // try fallback to TMDB anime
-    }
-
-    // 2. Direct TMDB anime feature films
-    try {
-      const tmdbAnime = await directFetchTmdbMovies(
-        'discover/movie?with_genres=16&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=100'
-      );
-      if (tmdbAnime.length > 0) return tmdbAnime;
     } catch {
       // fallback
     }

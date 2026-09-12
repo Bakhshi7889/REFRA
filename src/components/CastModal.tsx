@@ -232,7 +232,7 @@ export const CastModal: React.FC<CastModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed top-0 left-0 right-0 bottom-0 z-50 pointer-events-none flex justify-end px-3 sm:px-6 pt-3.5 max-w-md sm:max-w-xl md:max-w-2xl mx-auto safe-top">
+      <div className="fixed top-0 left-0 right-0 bottom-0 z-50 pointer-events-none flex justify-end px-4 sm:px-6 md:px-8 lg:px-10 pt-3.5 sm:pt-4 md:pt-5 w-full max-w-7xl mx-auto safe-top">
         {/* Transparent Dismissal Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -257,6 +257,7 @@ export const CastModal: React.FC<CastModalProps> = ({
             transformOrigin: 'top right',
             willChange: 'transform, opacity',
           }}
+          data-lenis-prevent="true"
           className="pointer-events-auto z-50 mt-12 w-[calc(100vw-24px)] max-w-[410px] backdrop-blur-2xl rounded-[28px] bg-[#101218]/92 border border-white/12 shadow-[0_24px_64px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.22)] p-4 flex flex-col max-h-[82vh] overflow-hidden"
         >
           {/* Header */}

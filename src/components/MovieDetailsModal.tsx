@@ -387,6 +387,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
           {/* Scrollable Content Container with PC Smooth Scrollbar */}
           <div
             ref={scrollContainerRef}
+            data-lenis-prevent="true"
             className="overflow-y-auto desktop-scrollbar overscroll-contain flex-1 min-h-0 pb-12"
           >
             {/* Cinematic Stage: Trailer (Autoplay after 320ms entrance) OR 16:9 Fanart OR 9:16 Posters */}

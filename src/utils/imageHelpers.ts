@@ -26,17 +26,30 @@ export const FALLBACK_POSTER = `data:image/svg+xml;utf8,<svg xmlns="http://www.w
 export const FALLBACK_BACKDROP = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" fill="none"><rect width="100%" height="100%" fill="%2312141a"/><radialGradient id="gb" cx="50%" cy="45%" r="50%"><stop offset="0%" stop-color="%23222736"/><stop offset="100%" stop-color="%230c0d10"/></radialGradient><rect width="100%" height="100%" fill="url(%23gb)"/><g opacity="0.4" transform="translate(608, 305)"><rect x="0" y="16" width="64" height="48" rx="8" fill="%232d3345"/><path d="M0 24 L64 24" stroke="%231a1d27" stroke-width="2"/><path d="M0 16 L12 0 L24 16 L36 0 L48 16 L60 0 L64 16 Z" fill="%233b4359"/><circle cx="32" cy="40" r="10" fill="%231e222f"/><polygon points="30,35 37,40 30,45" fill="%2364748b"/></g><text x="50%" y="405" text-anchor="middle" fill="%23717d96" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" font-weight="600" letter-spacing="0.1em">REFRA CINEMA 4K</text></svg>`;
 
 /**
- * Wraps an external image URL with the server-side image proxy if user enabled 'proxy' mode
+ * Wraps or routes an external image URL using the designated routing strategy.
+ * By default and design, it routes TMDB and cinema images through the Cloudflare Edge Mirror (wsrv.nl),
+ * replicating the exact unblocked Cloudflare CDN architecture used by the Anime feed.
  */
 export function wrapWithProxyIfNeeded(url: string): string {
   if (!url || typeof url !== 'string') return url;
   if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url;
 
-  const mode = getImageRoutingMode();
-  if (mode === 'proxy' && url.includes('image.tmdb.org/t/p/')) {
-    return `/api/image?url=${encodeURIComponent(url)}`;
+  // Unsplash, AniList, and MyAnimeList already use fast, globally unblocked CDNs
+  if (
+    url.includes('s4.anilist.co') ||
+    url.includes('anilist.co') ||
+    url.includes('cdn.myanimelist.net') ||
+    url.includes('images.unsplash.com') ||
+    url.includes('wsrv.nl') ||
+    url.includes('weserv.nl')
+  ) {
+    return url;
   }
-  return url;
+
+  // Direct CDN and Refraction proxy fail on restricted/throttled ISPs.
+  // Use the exact settings used for Anime: Cloudflare Edge Mirror (wsrv.nl) with webp output.
+  const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp`;
 }
 
 /**
@@ -149,8 +162,9 @@ export function getLogoUrl(pathOrUrl: string | null | undefined): string | null 
 
 /**
  * Gracefully replaces a broken image element source:
- * 1. If direct TMDB CDN failed (e.g. cellular carrier/ISP block in India), proxies via /api/image
- * 2. If proxy also fails or offline, provides clean inline cinematic SVG
+ * 1. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues using Anime Cloudflare Edge Mirror (wsrv.nl)
+ * 2. If Edge mirror failed, attempts high-speed server image proxy (/api/image)
+ * 3. If all fail or offline, provides clean inline cinematic SVG placeholder
  */
 export function handleImageError(
   e: React.SyntheticEvent<HTMLImageElement, Event>,
@@ -159,11 +173,24 @@ export function handleImageError(
   const target = e.currentTarget;
   const currentSrc = target.src;
 
-  // If a direct TMDB CDN image failed to load, automatically attempt routing via high-speed server image proxy
+  // Step 1: If direct image failed (e.g. image.tmdb.org blocked by ISP),
+  // immediately rescue using the unblocked Anime-style Cloudflare Edge Mirror (wsrv.nl)
+  if (
+    currentSrc &&
+    !currentSrc.includes('wsrv.nl') &&
+    !currentSrc.includes('weserv.nl') &&
+    (currentSrc.startsWith('http://') || currentSrc.startsWith('https://')) &&
+    target.dataset.triedEdge !== 'true'
+  ) {
+    target.dataset.triedEdge = 'true';
+    target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentSrc)}&output=webp`;
+    return;
+  }
+
+  // Step 2: If Edge mirror failed or on restricted environment, attempt server proxy
   if (
     currentSrc &&
     !currentSrc.includes('/api/image') &&
-    currentSrc.includes('image.tmdb.org/t/p/') &&
     target.dataset.triedProxy !== 'true'
   ) {
     target.dataset.triedProxy = 'true';
@@ -171,6 +198,7 @@ export function handleImageError(
     return;
   }
 
+  // Step 3: Inline SVG zero-network fallback
   const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
   if (target.src !== fallback) {
     target.onerror = null; // Prevent secondary error loops
@@ -217,10 +245,12 @@ export function getPosterUrl(
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
     const width = effectiveSize === 'w185' ? 240 : effectiveSize === 'w342' ? 400 : 600;
-    return target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    return wrapWithProxyIfNeeded(unsplashUrl);
   }
 
-  return target;
+  // Wrap any other external URL (AniList, MyAnimeList, Fanart, etc.)
+  return wrapWithProxyIfNeeded(target);
 }
 
 /**
@@ -262,10 +292,11 @@ export function getBackdropUrl(
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
     const width = effectiveSize === 'w300' ? 480 : effectiveSize === 'w780' ? 960 : 1440;
-    return target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    return wrapWithProxyIfNeeded(unsplashUrl);
   }
 
-  return target;
+  return wrapWithProxyIfNeeded(target);
 }
 
 

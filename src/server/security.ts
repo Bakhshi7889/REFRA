@@ -29,7 +29,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   // Content Security Policy: Authorize trusted media, styling, fonts, streaming assets, and AI Studio iframe embedding
   const cspDirectives = [
     "default-src 'self'",
-    "img-src 'self' data: blob: https://image.tmdb.org https://*.fanart.tv https://*.anilist.co https://img.youtube.com https://i.ytimg.com https://images.unsplash.com https://m.media-amazon.com https://*.googleusercontent.com",
+    "img-src 'self' data: blob: https://image.tmdb.org https://wsrv.nl https://*.weserv.nl https://*.fanart.tv https://*.anilist.co https://cdn.myanimelist.net https://*.jikan.moe https://img.youtube.com https://i.ytimg.com https://images.unsplash.com https://m.media-amazon.com https://*.googleusercontent.com",
     "media-src 'self' blob: https://*",
     "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://*",
     "frame-ancestors 'self' https://*.google.com https://*.googleusercontent.com https://ai.studio https://*.run.app",

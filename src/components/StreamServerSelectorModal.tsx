@@ -363,7 +363,7 @@ export const StreamServerSelectorModal: React.FC<StreamServerSelectorModalProps>
             </div>
 
             {/* 4. Streams List Area */}
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 hide-scrollbar overscroll-contain">
+            <div data-lenis-prevent="true" className="flex-1 overflow-y-auto space-y-2.5 pr-1 hide-scrollbar overscroll-contain">
               {isLoading ? (
                 // Shimmer Loading Skeleton
                 <div className="space-y-2.5 pt-1">
