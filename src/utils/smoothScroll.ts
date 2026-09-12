@@ -59,6 +59,22 @@ export function initSmoothScroll(): () => void {
 
   const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
+  if (isTouch) {
+    // Mobile touch devices: use 100% native hardware-composited scrolling.
+    // Completely eliminates touch latency, micro-stutter, and touch event fighting.
+    const onTouchScroll = () => {
+      const doc = document.documentElement;
+      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+      const maxScroll = Math.max(1, scrollH - window.innerHeight);
+      const currentScroll = window.scrollY || doc.scrollTop || 0;
+      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
+    };
+    window.addEventListener('scroll', onTouchScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onTouchScroll);
+    };
+  }
+
   const lenis = new Lenis({
     duration: 0.85,
     easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
@@ -68,7 +84,7 @@ export function initSmoothScroll(): () => void {
     wheelMultiplier: 0.95,
     syncTouch: false,
     syncTouchLerp: 0.075,
-    touchMultiplier: isTouch ? 0 : 1.0,
+    touchMultiplier: 1.0,
     infinite: false,
   });
 

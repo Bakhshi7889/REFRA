@@ -131,12 +131,12 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
   const handleResetDials = () => {
     const updated: UiThemeConfig = {
       ...themeConfig,
-      bgOverlayDim: 40,
-      bgBlur: 0,
+      bgOverlayDim: 30,
+      bgBlur: 6,
     };
     onThemeChanged(updated);
     saveThemeConfig(updated);
-    if (showToast) showToast('Reset dials: 40% dim, 0px blur');
+    if (showToast) showToast('Reset dials: 30% dim, 6px blur (Soft)');
   };
 
   // Select Preset 9:16 Wallpaper
@@ -347,12 +347,12 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                     <h6 className="text-xs font-semibold text-white">Atmospheric Optics Dials</h6>
                   </div>
 
-              {(themeConfig.bgOverlayDim !== 40 || (themeConfig.bgBlur || 0) !== 0) && (
+              {(themeConfig.bgOverlayDim !== 30 || (themeConfig.bgBlur ?? 6) !== 6) && (
                 <button
                   type="button"
                   onClick={handleResetDials}
                   className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-medium text-neutral-300 transition-colors cursor-pointer flex items-center gap-1"
-                  title="Reset dials to default (40% dim, 0px blur)"
+                  title="Reset dials to default (30% dim, 6px blur)"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Reset Dials</span>
@@ -421,7 +421,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                     <span>Blur Dial</span>
                   </span>
                   <span className="font-mono text-xs font-bold text-white px-2 py-0.5 rounded-md bg-white/10">
-                    {(themeConfig.bgBlur || 0) === 0 ? '0px (Sharp)' : `${themeConfig.bgBlur}px`}
+                    {(themeConfig.bgBlur ?? 6) === 6 ? '6px (Soft)' : (themeConfig.bgBlur || 0) === 0 ? '0px (Sharp)' : `${themeConfig.bgBlur}px`}
                   </span>
                 </div>
 
@@ -430,14 +430,14 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                   min="0"
                   max="32"
                   step="1"
-                  value={themeConfig.bgBlur || 0}
+                  value={themeConfig.bgBlur ?? 6}
                   onChange={(e) => handleBlurChange(Number(e.target.value))}
                   className="w-full accent-[var(--color-accent)] cursor-pointer h-1.5 bg-neutral-800 rounded-lg"
                 />
 
                 <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                  <span>0px (Cinema)</span>
-                  <span>12px (Diffused)</span>
+                  <span>0px (Sharp)</span>
+                  <span>6px (Soft)</span>
                   <span>32px (Frost)</span>
                 </div>
 
@@ -454,7 +454,7 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                       type="button"
                       onClick={() => handleBlurChange(p.val)}
                       className={`flex-1 py-1 rounded-lg text-[10px] font-medium transition-all cursor-pointer ${
-                        (themeConfig.bgBlur || 0) === p.val
+                        (themeConfig.bgBlur ?? 6) === p.val
                           ? 'bg-white/20 text-white font-bold'
                           : 'bg-white/5 text-neutral-400 hover:text-white'
                       }`}

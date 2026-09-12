@@ -27,67 +27,64 @@ export const FALLBACK_BACKDROP = `data:image/svg+xml;utf8,<svg xmlns="http://www
 
 /**
  * Wraps or routes an external image URL using the designated routing strategy.
- * By default ('auto' or 'direct'), delivers directly from TMDB's high-speed global CDN (image.tmdb.org).
- * Automatically fails over via handleImageError if an ISP or browser blocks direct CDN access.
+ * By default and design, it routes TMDB and cinema images through the Cloudflare Edge Mirror (wsrv.nl),
+ * replicating the exact unblocked Cloudflare CDN architecture used by the Anime feed.
  */
 export function wrapWithProxyIfNeeded(url: string): string {
   if (!url || typeof url !== 'string') return url;
   if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('/')) return url;
 
-  // Static assets or already wrapped/specialized CDNs
+  // Unsplash, AniList, and MyAnimeList already use fast, globally unblocked CDNs
   if (
     url.includes('s4.anilist.co') ||
     url.includes('anilist.co') ||
     url.includes('cdn.myanimelist.net') ||
     url.includes('images.unsplash.com') ||
     url.includes('wsrv.nl') ||
-    url.includes('weserv.nl') ||
-    url.startsWith('/api/image')
+    url.includes('weserv.nl')
   ) {
     return url;
   }
 
-  const mode = getImageRoutingMode();
-  if (mode === 'proxy') {
-    return `/api/image?url=${encodeURIComponent(url)}`;
-  }
-
-  if (mode === 'anime_edge') {
-    const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
-    return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp`;
-  }
-
-  // Default ('auto' and 'direct'):
-  // Use direct TMDB CDN (image.tmdb.org). It is the fastest, official, HTTP/2 CDN worldwide.
-  // If an ISP restricts direct access, handleImageError will automatically rescue via /api/image.
-  return url;
+  // Direct CDN and Refraction proxy fail on restricted/throttled ISPs.
+  // Route via Cloudflare Edge Mirror (wsrv.nl) with webp output.
+  // When Data Saver is OFF: q=95 delivers full studio fidelity, film grain, and rich color depth.
+  // When Data Saver is ON: q=55 compresses image bandwidth to save mobile data.
+  const isDataSaver = isDataSaverActive();
+  const q = isDataSaver ? 55 : 95;
+  const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp&q=${q}`;
 }
 
 /**
  * Resolves optimal poster size based on user resolution quality preference and data saver
  */
-function getEffectivePosterSize(requestedSize: PosterSize = 'w342'): PosterSize {
+function getEffectivePosterSize(requestedSize: PosterSize = 'w500'): PosterSize {
   const quality = getImageResolutionQuality();
   if (quality === 'ultra') return 'w780';
   if (quality === 'high') return 'w500';
-  if (quality === 'balanced') return 'w342';
+  if (quality === 'balanced') return 'w500';
   if (quality === 'compact') return 'w185';
   
-  // 'auto' default
+  // 'auto' default:
+  // When Data Saver is active -> 'w185'
+  // When Data Saver is OFF -> high-res requested size, defaulting to 'w500'
   return isDataSaverActive() ? 'w185' : requestedSize;
 }
 
 /**
  * Resolves optimal backdrop size based on user resolution quality preference and data saver
  */
-function getEffectiveBackdropSize(requestedSize: BackdropSize = 'w780'): BackdropSize {
+function getEffectiveBackdropSize(requestedSize: BackdropSize = 'w1280'): BackdropSize {
   const quality = getImageResolutionQuality();
   if (quality === 'ultra') return 'original';
   if (quality === 'high') return 'w1280';
-  if (quality === 'balanced') return 'w780';
+  if (quality === 'balanced') return 'w1280';
   if (quality === 'compact') return 'w300';
   
-  // 'auto' default
+  // 'auto' default:
+  // When Data Saver is active -> 'w300'
+  // When Data Saver is OFF -> full HD 'w1280' or requested size
   return isDataSaverActive() ? 'w300' : requestedSize;
 }
 
@@ -173,68 +170,48 @@ export function getLogoUrl(pathOrUrl: string | null | undefined): string | null 
 
 /**
  * Gracefully replaces a broken image element source:
- * 1. Unwraps any wrapped URL to find original asset URL.
- * 2. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues via local server proxy (/api/image)
- * 3. If server proxy failed, attempts Cloudflare Edge Mirror (wsrv.nl)
- * 4. If all fail or offline, provides clean inline cinematic SVG placeholder
+ * 1. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues using Anime Cloudflare Edge Mirror (wsrv.nl)
+ * 2. If Edge mirror failed, attempts high-speed server image proxy (/api/image)
+ * 3. If all fail or offline, provides clean inline cinematic SVG placeholder
  */
 export function handleImageError(
   e: React.SyntheticEvent<HTMLImageElement, Event>,
   isBackdrop = false
 ): void {
   const target = e.currentTarget;
-  const currentSrc = target.src || '';
+  const currentSrc = target.src;
 
-  // Prevent infinite loops once fallback has been applied
-  if (target.dataset.failed === 'true') {
+  // Step 1: If direct image failed (e.g. image.tmdb.org blocked by ISP),
+  // immediately rescue using the unblocked Anime-style Cloudflare Edge Mirror (wsrv.nl)
+  if (
+    currentSrc &&
+    !currentSrc.includes('wsrv.nl') &&
+    !currentSrc.includes('weserv.nl') &&
+    (currentSrc.startsWith('http://') || currentSrc.startsWith('https://')) &&
+    target.dataset.triedEdge !== 'true'
+  ) {
+    target.dataset.triedEdge = 'true';
+    target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentSrc)}&output=webp`;
     return;
   }
 
-  // Extract the underlying clean original URL if wrapped
-  let rawUrl = currentSrc;
-  if (currentSrc.includes('/api/image?url=')) {
-    try {
-      const u = new URL(currentSrc, window.location.origin);
-      const extracted = u.searchParams.get('url');
-      if (extracted) rawUrl = decodeURIComponent(extracted);
-    } catch {}
-  } else if (currentSrc.includes('wsrv.nl/?url=') || currentSrc.includes('weserv.nl/?url=')) {
-    try {
-      const u = new URL(currentSrc);
-      const extracted = u.searchParams.get('url');
-      if (extracted) {
-        rawUrl = extracted.startsWith('http') ? extracted : `https://${extracted}`;
-      }
-    } catch {}
-  }
-
-  // Stage 1: Rescue via high-speed server image proxy (/api/image)
+  // Step 2: If Edge mirror failed or on restricted environment, attempt server proxy
   if (
-    rawUrl &&
+    currentSrc &&
     !currentSrc.includes('/api/image') &&
     target.dataset.triedProxy !== 'true'
   ) {
     target.dataset.triedProxy = 'true';
-    target.src = `/api/image?url=${encodeURIComponent(rawUrl)}`;
+    target.src = `/api/image?url=${encodeURIComponent(currentSrc)}`;
     return;
   }
 
-  // Stage 2: Rescue via Cloudflare Edge Mirror (wsrv.nl)
-  if (
-    rawUrl &&
-    !currentSrc.includes('wsrv.nl') &&
-    target.dataset.triedEdge !== 'true'
-  ) {
-    target.dataset.triedEdge = 'true';
-    const clean = rawUrl.replace(/^[a-z]+:\/\//i, '');
-    target.src = `https://wsrv.nl/?url=${encodeURIComponent(clean)}&output=webp`;
-    return;
+  // Step 3: Inline SVG zero-network fallback
+  const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
+  if (target.src !== fallback) {
+    target.onerror = null; // Prevent secondary error loops
+    target.src = fallback;
   }
-
-  // Stage 3: Zero-network inline SVG fallback
-  target.dataset.failed = 'true';
-  target.onerror = null; // Remove handler to eliminate secondary error loops
-  target.src = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
 }
 
 /**
@@ -242,7 +219,7 @@ export function handleImageError(
  */
 export function getPosterUrl(
   pathOrUrl: string | null | undefined,
-  size: PosterSize = 'w342',
+  size: PosterSize = 'w500',
   fallbackPathOrUrl?: string | null
 ): string {
   const target = pathOrUrl || fallbackPathOrUrl;
@@ -275,8 +252,8 @@ export function getPosterUrl(
   // If Unsplash image
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
-    const width = effectiveSize === 'w185' ? 240 : effectiveSize === 'w342' ? 400 : 600;
-    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    const width = effectiveSize === 'w185' ? 240 : effectiveSize === 'w342' ? 480 : 800;
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=90');
     return wrapWithProxyIfNeeded(unsplashUrl);
   }
 
@@ -289,7 +266,7 @@ export function getPosterUrl(
  */
 export function getBackdropUrl(
   pathOrUrl: string | null | undefined,
-  size: BackdropSize = 'w780',
+  size: BackdropSize = 'w1280',
   fallbackPathOrUrl?: string | null
 ): string {
   const target = pathOrUrl || fallbackPathOrUrl;
@@ -322,8 +299,8 @@ export function getBackdropUrl(
   // If Unsplash image
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
-    const width = effectiveSize === 'w300' ? 480 : effectiveSize === 'w780' ? 960 : 1440;
-    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=75');
+    const width = effectiveSize === 'w300' ? 480 : effectiveSize === 'w780' ? 1280 : 1920;
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=90');
     return wrapWithProxyIfNeeded(unsplashUrl);
   }
 

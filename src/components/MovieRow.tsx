@@ -199,7 +199,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
           className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
           style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
         >
-        {movies.map((movie) => {
+        {movies.map((movie, idx) => {
           const isSaved = watchlist.includes(movie.id);
 
           return (
@@ -219,7 +219,7 @@ export const MovieRow: React.FC<MovieRowProps> = ({
                 src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
-                loading="eager"
+                loading={idx < 4 ? 'eager' : 'lazy'}
                 decoding="async"
                 draggable={false}
                 onError={(e) => handleImageError(e, false)}

@@ -372,7 +372,7 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   customBgImage: '/wallpapers/4d86f61b6c6b7dcb5bce020f2845b1b7.webp',
   customBgImageName: 'Solaris Flare (9:16)',
   bgOverlayDim: 30,
-  bgBlur: 0,
+  bgBlur: 6, // Soft by default (6px organic depth)
   selectedFontId: 'panchange',
   selectedPaletteId: null, // Neutral default (no color tint)
   animationEngine: 'fluid',
@@ -613,7 +613,7 @@ export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
         customBgImage: '/wallpapers/4d86f61b6c6b7dcb5bce020f2845b1b7.webp',
         customBgImageName: 'Solaris Flare (9:16)',
         bgOverlayDim: 30,
-        bgBlur: 0,
+        bgBlur: 6,
       };
       await saveThemeConfig(updated);
       return updated;
@@ -630,7 +630,11 @@ export async function loadSavedThemeConfig(): Promise<UiThemeConfig> {
       merged.customBgImageName = 'Solaris Flare (9:16)';
       merged.bgMode = 'image';
       merged.bgOverlayDim = 30;
-      merged.bgBlur = 0;
+      merged.bgBlur = 6;
+    }
+    // Migrate default wallpaper blur to Soft (6px) if previously at legacy Sharp (0px) or unset
+    if (typeof merged.bgBlur !== 'number' || merged.bgBlur === 0) {
+      merged.bgBlur = 6;
     }
     // Enforce 1px blur and 40px refraction height for liquid crystal glass defaults
     if (merged.liquidGlassMode === 'crystal' || !merged.liquidGlassMode) {
@@ -679,7 +683,9 @@ export function isSystemSaveDataDetected(): boolean {
 }
 
 /**
- * Synchronously checks if Data Saver mode is active (from user preferences or system network constraint)
+ * Synchronously checks if Data Saver mode is active.
+ * The user-configured toggle in Profile/Settings takes absolute precedence.
+ * Defaults to false (full studio high quality) when not enabled.
  */
 export function isDataSaverActive(): boolean {
   if (typeof window === 'undefined') return false;
@@ -694,7 +700,7 @@ export function isDataSaverActive(): boolean {
   } catch {
     // Ignore JSON errors
   }
-  return isSystemSaveDataDetected();
+  return false;
 }
 
 /**

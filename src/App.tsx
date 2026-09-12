@@ -768,10 +768,10 @@ export default function App() {
       const maxTravel = Math.max(0, naturalHeight - vh);
 
       // On PC widescreen, full travel from top (0) to bottom (maxTravel)
-      // On mobile portrait, smooth subtle organic parallax
-      const travel = isDesktop ? maxTravel : Math.min(maxTravel, vh * 0.2);
+      // On mobile portrait, keep wallpaper stationary to ensure zero GPU recomposition during rapid touch scrolling
+      const travel = isDesktop ? maxTravel : 0;
       const translateY = -pendingProgress * travel;
-      const scale = (themeConfig.bgBlur || 0) > 0 ? 1.05 : 1.0;
+      const scale = (themeConfig.bgBlur ?? 6) > 0 ? 1.05 : 1.0;
 
       bgImageRef.current.style.transform = `translate3d(0, ${translateY.toFixed(1)}px, 0) scale(${scale})`;
     };
@@ -817,7 +817,7 @@ export default function App() {
             style={{
               width: '100vw',
               height: 'max(100vh, calc(100vw * 16 / 9))',
-              filter: `blur(${themeConfig.bgBlur || 0}px)`,
+              filter: `blur(${themeConfig.bgBlur ?? 6}px)`,
               transformOrigin: 'top center',
             }}
           />

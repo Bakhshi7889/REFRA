@@ -197,7 +197,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
       ...(movie.backdrops || []),
       ...(movie.fanart || []),
     ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
-    const size = isDataSaver ? 'w780' : 'w780';
+    const size = isDataSaver ? 'w780' : 'w1280';
     return raw.map((url) => getBackdropUrl(url, size, movie.posterUrl));
   }, [movie.backdropUrl, movie.backdrops, movie.fanart, movie.posterUrl, isDataSaver]);
 
@@ -207,7 +207,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
       movie.posterUrl,
       ...(movie.posters || []),
     ].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx);
-    const size = isDataSaver ? 'w185' : 'w342';
+    const size = isDataSaver ? 'w185' : 'w500';
     return raw.map((url) => getPosterUrl(url, size, movie.backdropUrl));
   }, [movie.posterUrl, movie.posters, movie.backdropUrl, isDataSaver]);
 
@@ -408,10 +408,9 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     title="Click to play trailer"
                   >
                     <img
-                      src={getBackdropUrl(movie.backdropUrl, 'w780') || getPosterUrl(movie.posterUrl, 'w342')}
+                      src={getBackdropUrl(movie.backdropUrl, isDataSaver ? 'w780' : 'w1280') || getPosterUrl(movie.posterUrl, isDataSaver ? 'w342' : 'w500')}
                       alt=""
                       referrerPolicy="no-referrer"
-                      onError={(e) => handleImageError(e, true)}
                       className="w-full h-full object-cover opacity-60 group-hover:opacity-75 transition-opacity"
                     />
                     <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
@@ -622,7 +621,6 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={art}
                       alt="Fanart"
                       referrerPolicy="no-referrer"
-                      onError={(e) => handleImageError(e, true)}
                       className="w-full h-full object-cover"
                     />
                   </button>
@@ -651,7 +649,6 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={poster}
                       alt="Poster"
                       referrerPolicy="no-referrer"
-                      onError={(e) => handleImageError(e, false)}
                       className="w-full h-full object-cover"
                     />
                   </button>
@@ -674,7 +671,6 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
                     alt={`${movie.title} Poster`}
                     referrerPolicy="no-referrer"
-                    onError={(e) => handleImageError(e, false)}
                     className="w-full h-full object-cover"
                   />
                   {movie.badge && (
@@ -928,7 +924,6 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                               src={toWebpUrl(wp.logoUrl, 100)}
                               alt={wp.name}
                               referrerPolicy="no-referrer"
-                              onError={(e) => handleImageError(e, false)}
                               className="w-12 h-12 rounded-2xl object-cover shadow-lg"
                             />
                           </div>
@@ -960,21 +955,19 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                             }}
                             className="flex flex-col items-center text-center w-18 shrink-0 space-y-1.5 group cursor-pointer"
                           >
-                            <div className="w-13 h-13 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0 group-hover:scale-105 transition-transform relative flex items-center justify-center">
-                              {actor.profileUrl && (
+                            <div className="w-13 h-13 rounded-full overflow-hidden bg-white/10 border border-white/10 shrink-0 group-hover:scale-105 transition-transform">
+                              {actor.profileUrl ? (
                                 <img
                                   src={toWebpUrl(actor.profileUrl, 120)}
                                   alt={actor.name}
                                   referrerPolicy="no-referrer"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                  className="w-full h-full object-cover absolute inset-0"
+                                  className="w-full h-full object-cover"
                                 />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-xs font-semibold text-neutral-400">
+                                  {actor.name.charAt(0)}
+                                </div>
                               )}
-                              <span className="text-xs font-semibold text-neutral-300 select-none">
-                                {actor.name.charAt(0)}
-                              </span>
                             </div>
                             <div className="w-full">
                               <p className="text-[11px] font-medium text-white truncate group-hover:text-neutral-200">{actor.name}</p>
@@ -1040,19 +1033,13 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                               <div
                                 key={p.name}
                                 title={p.name}
-                                className="px-4 py-2 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-md min-h-[36px]"
+                                className="px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-md"
                               >
                                 <img
                                   src={toWebpUrl(p.logoUrl, 160)}
                                   alt={p.name}
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                  className="h-7 sm:h-9 max-w-[130px] object-contain filter invert brightness-200"
+                                  className="h-9 sm:h-11 max-w-[130px] object-contain filter invert brightness-200"
                                 />
-                                <span className="text-[11px] font-medium text-neutral-300 hidden only:inline">
-                                  {p.name}
-                                </span>
                               </div>
                             );
                           })}

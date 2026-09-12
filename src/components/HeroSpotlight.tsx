@@ -66,14 +66,14 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
   // Responsive images: portrait for mobile (2:3), landscape for PC/desktop (16:9)
   const portraitImages = useMemo(() => {
-    const targetSize = isDataSaver ? 'w185' : 'w342';
+    const targetSize = isDataSaver ? 'w185' : 'w500';
     return (activeMovie?.posters && activeMovie.posters.length > 0)
       ? activeMovie.posters.map((p) => getPosterUrl(p, targetSize, activeMovie.backdropUrl))
       : [getPosterUrl(activeMovie?.posterUrl, targetSize, activeMovie?.backdropUrl)].filter(Boolean);
   }, [activeMovie, isDataSaver]);
 
   const landscapeImages = useMemo(() => {
-    const targetSize = isDataSaver ? 'w780' : 'w780';
+    const targetSize = isDataSaver ? 'w780' : 'w1280';
     return [
       activeMovie?.backdropUrl,
       ...(activeMovie?.backdrops || []),
@@ -87,8 +87,8 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const currentImageUrl =
     activeImageList[activeBackdropIdx % (activeImageList.length || 1)] ||
     (isMobile
-      ? getPosterUrl(activeMovie?.posterUrl, isDataSaver ? 'w185' : 'w342', activeMovie?.backdropUrl)
-      : getBackdropUrl(activeMovie?.backdropUrl, isDataSaver ? 'w780' : 'w780', activeMovie?.posterUrl));
+      ? getPosterUrl(activeMovie?.posterUrl, isDataSaver ? 'w185' : 'w500', activeMovie?.backdropUrl)
+      : getBackdropUrl(activeMovie?.backdropUrl, isDataSaver ? 'w780' : 'w1280', activeMovie?.posterUrl));
 
   // 1. Artwork cycling:
   // Strictly disabled in Data Saver mode to save bandwidth.
@@ -206,8 +206,6 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                 src={currentImageUrl}
                 alt=""
                 aria-hidden="true"
-                loading="eager"
-                decoding="async"
                 referrerPolicy="no-referrer"
                 className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50 brightness-[0.65] pointer-events-none transform-gpu"
               />
@@ -216,8 +214,6 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               <img
                 src={currentImageUrl}
                 alt={activeMovie.title}
-                loading="eager"
-                decoding="async"
                 referrerPolicy="no-referrer"
                 onError={(e) => handleImageError(e, !isMobile)}
                 className="relative z-10 w-full h-full object-cover object-center sm:object-cover sm:object-center drop-shadow-2xl"
