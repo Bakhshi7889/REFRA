@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { lockScroll } from '../utils/scrollLock';
-import { toWebpUrl } from '../utils/imageHelpers';
+import { toWebpUrl, handleImageError } from '../utils/imageHelpers';
 
 export interface AppNotification {
   id: string;
@@ -308,6 +308,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                     <img
                       src={toWebpUrl(n.posterUrl, 100)}
                       alt={n.title}
+                      onError={(e) => handleImageError(e, false)}
                       className="w-10 h-14 object-cover rounded-[10px] shrink-0 shadow border border-white/10"
                     />
                   ) : (

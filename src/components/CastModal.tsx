@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, StreamItem } from '../types';
-import { getPosterUrl } from '../utils/imageHelpers';
+import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
 import { lockScroll } from '../utils/scrollLock';
 
 export interface CastDevice {
@@ -296,6 +296,7 @@ export const CastModal: React.FC<CastModalProps> = ({
               <img
                 src={getPosterUrl(activeMovie.posterUrl, 'w185', activeMovie.backdropUrl)}
                 alt={activeMovie.title}
+                onError={(e) => handleImageError(e, false)}
                 className="w-9 h-12 object-cover rounded-[10px] shadow"
               />
               <div className="min-w-0 flex-1">

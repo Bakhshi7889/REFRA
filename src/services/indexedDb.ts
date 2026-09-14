@@ -1,4 +1,7 @@
 import { Movie, Review } from '../types';
+import { clear6HourCache } from './movieCache';
+import { clearMovieApiCache } from './movieApi';
+import { invalidateSWR } from './swrCache';
 
 const DB_NAME = 'RefraCinemaDB';
 const DB_VERSION = 1;
@@ -427,31 +430,92 @@ export async function importIndexedDbBackup(jsonString: string): Promise<boolean
 }
 
 export async function clearAllIndexedDb(): Promise<void> {
+  // 1. Clear all IndexedDB stores
   try {
     const db = await openDB();
     const storeNames = ['watchlist', 'history', 'reviews', 'settings', 'trakt_session'];
     await Promise.all(
       storeNames.map(
         (name) =>
-          new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(name, 'readwrite');
-            const store = tx.objectStore(name);
-            store.clear();
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+          new Promise<void>((resolve) => {
+            try {
+              const tx = db.transaction(name, 'readwrite');
+              const store = tx.objectStore(name);
+              store.clear();
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => resolve();
+            } catch {
+              resolve();
+            }
           })
       )
     );
-
-    localStorage.removeItem('refra_watchlist');
-    localStorage.removeItem('refra_trakt_session');
-    localStorage.removeItem('refra_cinema_settings');
-    localStorage.removeItem('refra_embed_settings');
-    localStorage.removeItem('luma_watchlist');
-    localStorage.removeItem('luma_trakt_session');
-    localStorage.removeItem('luma_cinema_settings');
-    localStorage.removeItem('luma_embed_settings');
   } catch (err) {
-    console.warn('Clear IndexedDB error:', err);
+    console.warn('Clear IndexedDB stores error:', err);
+  }
+
+  // 2. Clear browser CacheStorage (Service Worker cache)
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      const cacheKeys = await window.caches.keys();
+      await Promise.all(cacheKeys.map((key) => window.caches.delete(key)));
+    } catch (err) {
+      console.warn('Error clearing CacheStorage:', err);
+    }
+  }
+
+  // 3. Post purge command to Service Worker
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    try {
+      navigator.serviceWorker.controller.postMessage({ type: 'PURGE_ALL_CACHES' });
+    } catch (err) {
+      console.warn('Error notifying Service Worker:', err);
+    }
+  }
+
+  // 4. Invalidate memory & API caches
+  try {
+    invalidateSWR();
+    clear6HourCache();
+    clearMovieApiCache();
+  } catch (err) {
+    console.warn('Error clearing in-memory caches:', err);
+  }
+
+  // 5. Clear localStorage and sessionStorage keys
+  if (typeof window !== 'undefined') {
+    try {
+      const explicitKeys = [
+        'refra_watchlist',
+        'refra_trakt_session',
+        'refra_cinema_settings',
+        'refra_embed_settings',
+        'refra_cached_catalog',
+        'refra_catalog_6h_cache',
+        'refra_catalog_6h_timestamp',
+        'luma_watchlist',
+        'luma_trakt_session',
+        'luma_cinema_settings',
+        'luma_embed_settings',
+      ];
+      explicitKeys.forEach((k) => {
+        try { localStorage.removeItem(k); } catch {}
+      });
+
+      if (window.localStorage) {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('refra_') || k.startsWith('luma_') || k.startsWith('swr_') || k.startsWith('tmdb_'))) {
+            localStorage.removeItem(k);
+          }
+        }
+      }
+
+      if (window.sessionStorage) {
+        sessionStorage.clear();
+      }
+    } catch (err) {
+      console.warn('Error clearing localStorage:', err);
+    }
   }
 }

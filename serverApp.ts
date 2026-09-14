@@ -1388,6 +1388,20 @@ app.use((req, res, next) => {
         }
       }
 
+      // CRITICAL NETLIFY PROTECTION:
+      // Streaming multi-gigabyte video files through Netlify Functions violates Netlify TOS
+      // and consumes gigabytes of bandwidth instantly (leading to account lock).
+      // On Netlify, redirect directly to the stream source so the browser streams without Netlify function egress.
+      const isNetlify = Boolean(
+        process.env.NETLIFY ||
+        req.headers['x-nf-request-id'] ||
+        (typeof req.headers.host === 'string' && req.headers.host.includes('netlify.app'))
+      );
+
+      if (isNetlify) {
+        return res.redirect(302, targetUrl);
+      }
+
       const parsedUrl = new URL(targetUrl);
       const headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',

@@ -125,6 +125,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
   const [regionInfo, setRegionInfo] = useState(() => getUserRegionInfo());
   const pwa = usePWAInstall();
 
@@ -293,11 +294,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   // Purge database
   const handlePurgeDatabase = async () => {
-    await clearAllIndexedDb();
-    setShowPurgeConfirm(false);
-    if (onWatchlistUpdated) onWatchlistUpdated([]);
-    showToast('Purged all local IndexedDB data and reset to default');
-    loadDatabaseInfo();
+    setIsPurging(true);
+    try {
+      await clearAllIndexedDb();
+      setShowPurgeConfirm(false);
+      if (onWatchlistUpdated) onWatchlistUpdated([]);
+      showToast('Purged all database records, offline storage & image caches');
+      await loadDatabaseInfo();
+    } catch (err) {
+      console.error('Failed to purge database:', err);
+      showToast('Purged database with local resets');
+      await loadDatabaseInfo();
+    } finally {
+      setIsPurging(false);
+    }
   };
 
   const formatBytes = (bytes: number) => {
@@ -646,7 +656,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5">
               <span className="text-[10px] text-neutral-400 block">Storage</span>
               <span className="text-base font-bold text-white mt-0.5 block">
-                {dbStats.storageUsageBytes ? formatBytes(dbStats.storageUsageBytes) : '< 1 MB'}
+                {dbStats.storageUsageBytes > 0 ? formatBytes(dbStats.storageUsageBytes) : '0 KB'}
               </span>
             </div>
           </div>
@@ -881,9 +891,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <button
                   type="button"
                   onClick={handlePurgeDatabase}
-                  className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition-colors cursor-pointer"
+                  disabled={isPurging}
+                  className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-xs font-semibold text-white transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
-                  Purge
+                  {isPurging ? 'Purging...' : 'Purge'}
                 </button>
               </div>
             </motion.div>

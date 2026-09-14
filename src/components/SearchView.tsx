@@ -851,6 +851,9 @@ export function SearchView({
                 <img
                   src={toWebpUrl(p.logo_path, 150)}
                   alt={p.provider_name}
+                  onError={(e) => {
+                    (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                  }}
                   className="w-full h-full object-cover rounded-2xl"
                 />
                 {isSelected && (

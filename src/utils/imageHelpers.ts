@@ -169,10 +169,30 @@ export function getLogoUrl(pathOrUrl: string | null | undefined): string | null 
 }
 
 /**
+ * Extracts the raw un-proxied URL from a wsrv.nl proxy URL if present
+ */
+export function extractDirectUrl(url: string): string | null {
+  if (!url) return null;
+  try {
+    if (url.includes('wsrv.nl') || url.includes('weserv.nl')) {
+      const parsed = new URL(url);
+      const inner = parsed.searchParams.get('url');
+      if (inner) {
+        const decoded = decodeURIComponent(inner);
+        if (decoded.startsWith('http://') || decoded.startsWith('https://')) return decoded;
+        return `https://${decoded}`;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+/**
  * Gracefully replaces a broken image element source:
- * 1. If direct image failed (e.g. image.tmdb.org blocked by ISP), rescues using Anime Cloudflare Edge Mirror (wsrv.nl)
- * 2. If Edge mirror failed, attempts high-speed server image proxy (/api/image)
- * 3. If all fail or offline, provides clean inline cinematic SVG placeholder
+ * 1. If Edge mirror failed, rescues with direct CDN URL (image.tmdb.org / fanart.tv)
+ * 2. If direct image failed, rescues using Cloudflare Edge Mirror (wsrv.nl)
+ * 3. Never burdens Netlify with /api/image requests (prevents bandwidth limits & account lock)
+ * 4. Fallback is instant inline cinematic SVG placeholder (zero network)
  */
 export function handleImageError(
   e: React.SyntheticEvent<HTMLImageElement, Event>,
@@ -180,9 +200,29 @@ export function handleImageError(
 ): void {
   const target = e.currentTarget;
   const currentSrc = target.src;
+  const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
 
-  // Step 1: If direct image failed (e.g. image.tmdb.org blocked by ISP),
-  // immediately rescue using the unblocked Anime-style Cloudflare Edge Mirror (wsrv.nl)
+  // Prevent re-triggering if already on fallback
+  if (currentSrc.startsWith('data:image/svg+xml')) {
+    target.onerror = null;
+    return;
+  }
+
+  // Step 1: If wsrv.nl Edge mirror failed or timed out, attempt direct origin CDN
+  if (
+    currentSrc &&
+    (currentSrc.includes('wsrv.nl') || currentSrc.includes('weserv.nl')) &&
+    target.dataset.triedDirect !== 'true'
+  ) {
+    const directUrl = extractDirectUrl(currentSrc);
+    if (directUrl && directUrl !== currentSrc) {
+      target.dataset.triedDirect = 'true';
+      target.src = directUrl;
+      return;
+    }
+  }
+
+  // Step 2: If direct CDN failed and edge mirror hasn't been tried yet, try wsrv.nl
   if (
     currentSrc &&
     !currentSrc.includes('wsrv.nl') &&
@@ -191,27 +231,29 @@ export function handleImageError(
     target.dataset.triedEdge !== 'true'
   ) {
     target.dataset.triedEdge = 'true';
-    target.src = `https://wsrv.nl/?url=${encodeURIComponent(currentSrc)}&output=webp`;
+    const cleanUrl = currentSrc.replace(/^[a-z]+:\/\//i, '');
+    target.src = `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp`;
     return;
   }
 
-  // Step 2: If Edge mirror failed or on restricted environment, attempt server proxy
+  // Step 3: If on Netlify, NEVER call /api/image server proxy to prevent bandwidth exhaustion
+  // On custom/local dev servers, attempt /api/image once if not tried
+  const isNetlify = typeof window !== 'undefined' && window.location.hostname.includes('netlify.app');
   if (
+    !isNetlify &&
     currentSrc &&
     !currentSrc.includes('/api/image') &&
     target.dataset.triedProxy !== 'true'
   ) {
     target.dataset.triedProxy = 'true';
-    target.src = `/api/image?url=${encodeURIComponent(currentSrc)}`;
+    const cleanUrl = extractDirectUrl(currentSrc) || currentSrc;
+    target.src = `/api/image?url=${encodeURIComponent(cleanUrl)}`;
     return;
   }
 
-  // Step 3: Inline SVG zero-network fallback
-  const fallback = isBackdrop ? FALLBACK_BACKDROP : FALLBACK_POSTER;
-  if (target.src !== fallback) {
-    target.onerror = null; // Prevent secondary error loops
-    target.src = fallback;
-  }
+  // Step 4: Inline SVG zero-network fallback
+  target.onerror = null; // Prevent secondary error loops
+  target.src = fallback;
 }
 
 /**

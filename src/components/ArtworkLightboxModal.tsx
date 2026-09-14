@@ -233,7 +233,12 @@ export const ArtworkLightboxModal: React.FC<ArtworkLightboxModalProps> = ({
                       : 'border-white/15 opacity-60 hover:opacity-100'
                   }`}
                 >
-                  <img src={art} alt="" className="w-full h-full object-cover" />
+                  <img
+                    src={art}
+                    alt=""
+                    onError={(e) => handleImageError(e, !isPoster)}
+                    className="w-full h-full object-cover"
+                  />
                 </button>
               ))}
             </div>

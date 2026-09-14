@@ -325,6 +325,9 @@ export const ReviewsSection: React.FC<ReviewsSectionProps> = ({ movie }) => {
                         src={toWebpUrl(rev.authorAvatar, 80)}
                         alt={rev.author}
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                         className="w-8 h-8 rounded-full object-cover border border-white/10 shrink-0"
                       />
                     ) : (

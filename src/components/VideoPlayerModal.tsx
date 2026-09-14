@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, AnimeEpisode, StreamItem } from '../types';
-import { getBackdropUrl, getPosterUrl } from '../utils/imageHelpers';
+import { getBackdropUrl, getPosterUrl, handleImageError } from '../utils/imageHelpers';
 import { saveIndexedDbHistoryItem } from '../services/indexedDb';
 import { scrobbleToTrakt } from '../services/traktApi';
 import { trackStreamStart } from '../services/analytics';
@@ -813,6 +813,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           <img
             src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
             alt=""
+            onError={(e) => handleImageError(e, true)}
             className="w-full h-full object-cover filter blur-[70px] sm:blur-[90px] scale-125 opacity-55 saturate-[175%] brightness-[0.75]"
             style={{ willChange: 'transform' }}
           />
@@ -884,6 +885,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 <img
                   src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
                   alt={currentMovie.title}
+                  onError={(e) => handleImageError(e, true)}
                   className="absolute inset-0 w-full h-full object-cover filter blur-xs scale-105 opacity-60"
                 />
                 <div className="absolute inset-0 bg-black/50 backdrop-blur-xs" />
@@ -1820,6 +1822,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                           <img
                             src={actor.profileUrl}
                             alt={actor.name}
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
                             className="w-10 h-10 rounded-full object-cover shrink-0 shadow-sm"
                           />
                         ) : (
@@ -2000,6 +2005,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                               <img
                                 src={comp.logoUrl}
                                 alt={comp.name}
+                                onError={(e) => {
+                                  (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                                }}
                                 className="h-10 sm:h-12 max-w-[140px] object-contain filter invert brightness-200"
                               />
                             </div>

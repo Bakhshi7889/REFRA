@@ -499,6 +499,9 @@ export const ThemeSettingsSection: React.FC<ThemeSettingsSectionProps> = ({
                       src={wp.url}
                       alt={wp.name}
                       loading="lazy"
+                      onError={(e) => {
+                        (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                      }}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
 

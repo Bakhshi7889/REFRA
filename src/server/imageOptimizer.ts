@@ -169,6 +169,32 @@ export async function handleImageOptimization(req: Request, res: Response): Prom
   }
 
   const quality = Math.min(Math.max(qualityParam || 80, 40), 95);
+
+  // CRITICAL NETLIFY / SERVERLESS PROTECTION:
+  // When deployed on Netlify or running in serverless mode, NEVER download and stream heavy image binaries
+  // through the serverless function! Each image would consume 500KB-2MB of Netlify Function egress,
+  // causing rapid bandwidth exhaustion (5.96 GB+) and Netlify account locks.
+  // Instead, issue an immediate HTTP 302 redirect directly to Cloudflare's Edge Mirror (wsrv.nl).
+  // This turns a 1MB payload into a 150-byte redirect, slashing Netlify bandwidth by 99.9% while
+  // delivering pristine WebP directly to the user's browser.
+  const isNetlifyOrServerless = Boolean(
+    process.env.NETLIFY ||
+    process.env.NETLIFY_IMAGES_CDN_DOMAIN ||
+    req.headers['x-nf-request-id'] ||
+    (typeof req.headers.host === 'string' && req.headers.host.includes('netlify.app'))
+  );
+
+  if (isNetlifyOrServerless) {
+    if (targetUrl.includes('wsrv.nl') || targetUrl.includes('weserv.nl')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.redirect(302, targetUrl);
+    }
+    const clean = targetUrl.replace(/^[a-z]+:\/\//i, '');
+    const redirectUrl = `https://wsrv.nl/?url=${encodeURIComponent(clean)}&output=webp&q=${quality}`;
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.redirect(302, redirectUrl);
+  }
+
   const targetWidth = widthParam && widthParam > 0 && widthParam <= 2560 ? widthParam : undefined;
   const cacheKey = `${targetUrl}_w${targetWidth || 'orig'}_q${quality}`;
 

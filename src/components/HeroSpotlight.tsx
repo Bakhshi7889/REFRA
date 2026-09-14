@@ -207,6 +207,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                 alt=""
                 aria-hidden="true"
                 referrerPolicy="no-referrer"
+                onError={(e) => handleImageError(e, !isMobile)}
                 className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-50 brightness-[0.65] pointer-events-none transform-gpu"
               />
 
@@ -286,7 +287,12 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                 className="max-h-11 sm:max-h-16 max-w-[80%] sm:max-w-[50%] object-contain object-center sm:object-left drop-shadow-[0_4px_18px_rgba(0,0,0,0.95)] filter brightness-105"
                 onError={(e) => {
                   const target = e.currentTarget;
-                  if (activeMovie.logoUrl && activeMovie.logoUrl.includes('image.tmdb.org') && target.dataset.triedProxy !== 'true') {
+                  const isNetlify = typeof window !== 'undefined' && window.location.hostname.includes('netlify.app');
+                  if (activeMovie.logoUrl && target.dataset.triedEdge !== 'true') {
+                    target.dataset.triedEdge = 'true';
+                    const clean = activeMovie.logoUrl.replace(/^[a-z]+:\/\//i, '');
+                    target.src = `https://wsrv.nl/?url=${encodeURIComponent(clean)}&output=webp`;
+                  } else if (!isNetlify && activeMovie.logoUrl && target.dataset.triedProxy !== 'true') {
                     target.dataset.triedProxy = 'true';
                     target.src = `/api/image?url=${encodeURIComponent(activeMovie.logoUrl)}`;
                   } else {

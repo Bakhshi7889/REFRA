@@ -411,6 +411,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={getBackdropUrl(movie.backdropUrl, isDataSaver ? 'w780' : 'w1280') || getPosterUrl(movie.posterUrl, isDataSaver ? 'w342' : 'w500')}
                       alt=""
                       referrerPolicy="no-referrer"
+                      onError={(e) => handleImageError(e, true)}
                       className="w-full h-full object-cover opacity-60 group-hover:opacity-75 transition-opacity"
                     />
                     <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center gap-2">
@@ -621,6 +622,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={art}
                       alt="Fanart"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handleImageError(e, true)}
                       className="w-full h-full object-cover"
                     />
                   </button>
@@ -649,6 +651,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                       src={poster}
                       alt="Poster"
                       referrerPolicy="no-referrer"
+                      onError={(e) => handleImageError(e, false)}
                       className="w-full h-full object-cover"
                     />
                   </button>
@@ -671,6 +674,7 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                     src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
                     alt={`${movie.title} Poster`}
                     referrerPolicy="no-referrer"
+                    onError={(e) => handleImageError(e, false)}
                     className="w-full h-full object-cover"
                   />
                   {movie.badge && (
@@ -924,6 +928,9 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                               src={toWebpUrl(wp.logoUrl, 100)}
                               alt={wp.name}
                               referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                              }}
                               className="w-12 h-12 rounded-2xl object-cover shadow-lg"
                             />
                           </div>
@@ -961,6 +968,9 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                                   src={toWebpUrl(actor.profileUrl, 120)}
                                   alt={actor.name}
                                   referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
                                   className="w-full h-full object-cover"
                                 />
                               ) : (
@@ -1038,6 +1048,9 @@ const MovieDetailsContent: React.FC<MovieDetailsContentProps> = ({
                                 <img
                                   src={toWebpUrl(p.logoUrl, 160)}
                                   alt={p.name}
+                                  onError={(e) => {
+                                    (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                                  }}
                                   className="h-9 sm:h-11 max-w-[130px] object-contain filter invert brightness-200"
                                 />
                               </div>
