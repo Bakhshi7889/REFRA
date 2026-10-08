@@ -36,34 +36,17 @@
 html {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-  overflow-x: hidden;
-  overflow-y: scroll;
-}
-
-/* Lenis smooth scrolling integration */
-html.lenis, html.lenis body {
-  height: auto;
-}
-
-.lenis.lenis-smooth {
-  scroll-behavior: auto !important;
-}
-
-.lenis.lenis-smooth [data-lenis-prevent] {
-  overscroll-behavior: contain;
-}
-
-.lenis.lenis-stopped {
-  overflow: hidden;
-}
-
-.lenis.lenis-smooth iframe {
-  pointer-events: none;
+  /* Allow native viewport scrolling for scrolling screenshots across Android/iOS/PC */
+  overflow-x: clip;
+  overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
 body {
-  overflow-x: hidden;
+  /* overflow-x: clip prevents horizontal shift while preserving scroll screenshot capability */
+  overflow-x: clip;
   min-height: 100%;
+  width: 100%;
 }
 
 html.scroll-locked, body.scroll-locked {

@@ -2,6 +2,7 @@ import React from 'react';
 import { Home, Compass, Bookmark, User, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { NavTab } from '../types';
+import { triggerHaptic } from '../utils/haptics';
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -38,8 +39,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <Home
               className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
-                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+                  ? 'text-white stroke-[3px] nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 stroke-[2.75px] hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -61,8 +62,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <Compass
               className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
-                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+                  ? 'text-white stroke-[3px] nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 stroke-[2.75px] hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -83,8 +84,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <Search
               className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
-                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+                  ? 'text-white stroke-[3px] nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 stroke-[2.75px] hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -105,8 +106,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <Bookmark
               className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white fill-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
-                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+                  ? 'text-white stroke-[3px] fill-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 stroke-[2.75px] hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -128,8 +129,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <User
               className={`w-4 h-4 transition-all duration-150 ${
                 isActive
-                  ? 'text-white nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
-                  : 'text-neutral-400 hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
+                  ? 'text-white stroke-[3px] nav-svg-shadow-active drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]'
+                  : 'text-neutral-400 stroke-[2.75px] hover:text-neutral-200 nav-svg-shadow drop-shadow-[0_2px_4px_rgba(0,0,0,0.75)]'
               }`}
             />
           </motion.div>
@@ -138,7 +139,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-5 pt-2 sm:pb-6 pointer-events-none flex justify-center safe-bottom">
+    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-5 pt-2 sm:pb-6 pointer-events-none flex justify-center safe-bottom md:hidden">
       <nav
         aria-label="Bottom Navigation"
         className="pointer-events-auto liquid-glass liquid-glass-pill rounded-full px-2 py-1.5 flex items-center justify-between gap-1 max-w-sm w-full relative bg-[#101218]/65 border-white/12 shadow-[0_12px_36px_rgba(0,0,0,0.5)]"
@@ -151,7 +152,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               key={tab.id}
               type="button"
               whileTap={{ scale: 0.94 }}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => {
+                triggerHaptic('selection');
+                onTabChange(tab.id);
+              }}
               className="relative flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-full text-xs transition-colors min-h-[44px] cursor-pointer overflow-hidden"
               aria-label={tab.label}
             >

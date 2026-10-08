@@ -14,6 +14,7 @@ import {
 import { motion } from 'motion/react';
 import { Movie, CategoryFilter } from '../types';
 import { toWebpUrl } from '../utils/imageHelpers';
+import { triggerHaptic } from '../utils/haptics';
 
 interface ExploreViewProps {
   movies: Movie[];
@@ -136,7 +137,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <motion.div
                 whileTap={{ scale: 0.98 }}
                 key={g.name}
-                onClick={() => onSelectCategory(g.name)}
+                onClick={() => {
+                  triggerHaptic('light');
+                  onSelectCategory(g.name);
+                }}
                 className="p-3.5 rounded-2xl bg-[#14161f] border border-white/5 hover:bg-[#1b1f2b] transition-colors cursor-pointer flex items-center justify-between group shadow-md"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -170,7 +174,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <motion.div
               whileTap={{ scale: 0.98 }}
               key={s.name}
-              onClick={() => onSelectCategory(s.query)}
+              onClick={() => {
+                triggerHaptic('light');
+                onSelectCategory(s.query);
+              }}
               className="p-3.5 rounded-2xl bg-[#14161f] border border-white/5 hover:bg-[#1c202d] transition-colors cursor-pointer flex items-center justify-between shadow-md group"
             >
               <div>
@@ -204,7 +211,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <motion.div
               whileTap={{ scale: 0.96 }}
               key={director.name}
-              onClick={() => onSelectCategory(director.query)}
+              onClick={() => {
+                triggerHaptic('light');
+                onSelectCategory(director.query);
+              }}
               className="p-3.5 rounded-2xl bg-[#14161f] border border-white/5 hover:bg-[#1b1f2b] transition-all cursor-pointer flex flex-col items-center text-center space-y-2 group shadow-md"
             >
               <div className="w-14 h-14 rounded-full overflow-hidden bg-[#202534] border border-white/10 shrink-0 group-hover:scale-105 transition-transform shadow-inner">

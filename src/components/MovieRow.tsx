@@ -2,24 +2,165 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Star, Plus, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
-import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
+import { getPosterUrl, handleImageError, isImageLoaded, markImageLoaded } from '../utils/imageHelpers';
+import { triggerHaptic } from '../utils/haptics';
 
 interface MovieRowProps {
   title: string;
   subtitle?: string;
   badge?: string;
   movies: Movie[];
+  totalCount?: number;
   onMovieClick: (movie: Movie, originRect?: DOMRect) => void;
+  onHeaderClick?: () => void;
   watchlist: string[];
   onToggleWatchlist: (movieId: string) => void;
   onPlayMovie?: (movie: Movie) => void;
   showDivider?: boolean;
 }
 
-export const MovieRow: React.FC<MovieRowProps> = ({
+interface MovieCardProps {
+  movie: Movie;
+  idx: number;
+  isSaved: boolean;
+  onMovieClick: (movie: Movie, originRect?: DOMRect) => void;
+  onToggleWatchlist: (movieId: string) => void;
+  isDraggingRef: React.MutableRefObject<boolean>;
+}
+
+const MovieCard = React.memo<MovieCardProps>(({
+  movie,
+  idx,
+  isSaved,
+  onMovieClick,
+  onToggleWatchlist,
+  isDraggingRef,
+}) => {
+  const posterUrl = getPosterUrl(movie.posterUrl, 'w780', movie.backdropUrl);
+  const [isLoaded, setIsLoaded] = useState(() => isImageLoaded(posterUrl));
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // If already decoded in browser memory or HTTP cache, immediately mark loaded
+  useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current?.naturalWidth > 0) {
+      markImageLoaded(posterUrl);
+      setIsLoaded(true);
+    }
+  }, [posterUrl]);
+
+  return (
+    <motion.div
+      key={movie.id}
+      initial={false}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.03, y: -4 }}
+      whileTap={{ scale: 0.96 }}
+      onClick={(e) => {
+        if (isDraggingRef.current) return;
+        triggerHaptic('light');
+        onMovieClick(movie, e.currentTarget.getBoundingClientRect());
+      }}
+      style={{ willChange: 'transform', contain: 'paint layout' }}
+      className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group compositor-card hover:shadow-2xl hover:shadow-black/60 transition-shadow duration-300 transform-gpu"
+    >
+      {/* Skeleton Loading Shimmer Placeholder - unmounted once image is loaded */}
+      {!isLoaded && (
+        <div className="absolute inset-0 bg-neutral-800/50 animate-pulse pointer-events-none" />
+      )}
+
+      {/* Full Poster Image with eager loading and async decoding to stay loaded while scrolling */}
+      <img
+        ref={imgRef}
+        src={posterUrl}
+        alt={movie.title}
+        referrerPolicy="no-referrer"
+        loading="eager"
+        decoding="async"
+        fetchPriority={idx < 4 ? 'high' : 'auto'}
+        draggable={false}
+        onLoad={() => {
+          markImageLoaded(posterUrl);
+          setIsLoaded(true);
+        }}
+        onError={(e) => {
+          handleImageError(e, false);
+          setIsLoaded(true);
+        }}
+        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none relative z-0 ${
+          isLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      {/* Seamless Canvas Gradient Overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none z-1" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none z-1" />
+
+      {/* Top Bookmark Action Pill */}
+      <motion.button
+        whileTap={{ scale: 0.82 }}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerHaptic('success');
+          onToggleWatchlist(movie.id);
+        }}
+        className={`absolute top-2 right-2 p-1.5 rounded-full shadow-md transition-colors z-10 ${
+          isSaved
+            ? 'bg-neutral-200 text-neutral-950'
+            : 'liquid-glass text-white hover:bg-white/20'
+        }`}
+        aria-label={isSaved ? 'Remove from watchlist' : 'Add to watchlist'}
+      >
+        <motion.div
+          key={isSaved ? 'saved' : 'unsaved'}
+          initial={{ scale: 0.6, rotate: isSaved ? -20 : 20 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+        >
+          {isSaved ? (
+            <Check className="w-3.5 h-3.5" />
+          ) : (
+            <Plus className="w-3.5 h-3.5" />
+          )}
+        </motion.div>
+      </motion.button>
+
+      {/* Text Directly On Canvas */}
+      <div className="absolute inset-x-0 bottom-0 p-2.5 z-10 flex flex-col gap-0.5 pointer-events-none">
+        <h4 className="text-xs font-semibold text-white truncate leading-tight drop-shadow-sm">
+          {movie.title}
+        </h4>
+        <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mt-0.5">
+          <span className="flex items-center gap-1 font-medium text-white">
+            <Star className="w-2.5 h-2.5 fill-white text-white" />
+            {movie.score}
+          </span>
+          <span className="text-neutral-500">•</span>
+          <span className="text-neutral-300 font-light">{movie.releaseYear}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}, (prev, next) => {
+  return (
+    prev.movie.id === next.movie.id &&
+    prev.isSaved === next.isSaved &&
+    prev.movie.posterUrl === next.movie.posterUrl &&
+    prev.movie.backdropUrl === next.movie.backdropUrl &&
+    prev.movie.title === next.movie.title &&
+    prev.movie.score === next.movie.score
+  );
+});
+
+MovieCard.displayName = 'MovieCard';
+
+
+export const MovieRow: React.FC<MovieRowProps> = React.memo(({
   title,
   movies,
+  totalCount,
   onMovieClick,
+  onHeaderClick,
   watchlist,
   onToggleWatchlist,
   showDivider = true,
@@ -37,8 +178,10 @@ export const MovieRow: React.FC<MovieRowProps> = ({
   const updateScrollButtons = () => {
     if (!scrollRef.current) return;
     const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
-    setCanScrollLeft(scrollLeft > 10);
-    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+    const nextLeft = scrollLeft > 10;
+    const nextRight = scrollLeft < scrollWidth - clientWidth - 10;
+    setCanScrollLeft((prev) => (prev !== nextLeft ? nextLeft : prev));
+    setCanScrollRight((prev) => (prev !== nextRight ? nextRight : prev));
   };
 
   useEffect(() => {
@@ -135,13 +278,36 @@ export const MovieRow: React.FC<MovieRowProps> = ({
       )}
 
       {/* Row Header */}
-      <div className="flex items-center justify-between mb-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
-          {title}
-        </h3>
+      <div className="flex items-center justify-between gap-2.5 mb-2.5 w-full">
+        {onHeaderClick ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              onHeaderClick();
+            }}
+            className="group/header flex items-center justify-between flex-1 min-w-0 gap-2 text-left cursor-pointer hover:opacity-90 active:scale-[0.99] transition-all"
+            aria-label={`View all ${title}`}
+          >
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-200 group-hover/header:text-white transition-colors leading-snug truncate sm:overflow-visible sm:whitespace-normal">
+              {title}
+            </h3>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium normal-case tracking-normal px-2.5 py-0.5 rounded-full bg-white/10 text-neutral-300 border border-white/10 group-hover/header:bg-white/20 group-hover/header:text-white transition-all shrink-0 whitespace-nowrap select-none">
+              <span className="whitespace-nowrap">View All</span>
+              {typeof totalCount === 'number' && totalCount > 0 && (
+                <span className="text-neutral-400 font-light whitespace-nowrap">({totalCount})</span>
+              )}
+              <ChevronRight className="w-3 h-3 text-neutral-400 group-hover/header:text-white group-hover/header:translate-x-0.5 transition-transform shrink-0" />
+            </span>
+          </button>
+        ) : (
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-300 flex-1 min-w-0">
+            {title}
+          </h3>
+        )}
         
         {/* Desktop Quick Nav Buttons */}
-        <div className="hidden sm:flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity duration-200">
+        <div className="hidden sm:flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity duration-200 shrink-0">
           <button
             type="button"
             disabled={!canScrollLeft}
@@ -199,85 +365,22 @@ export const MovieRow: React.FC<MovieRowProps> = ({
           className="flex gap-3 overflow-x-auto hide-scrollbar pb-1 -mx-4 px-4 snap-x select-none cursor-grab active:cursor-grabbing scroll-smooth-touch"
           style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
         >
-        {movies.map((movie, idx) => {
-          const isSaved = watchlist.includes(movie.id);
-
-          return (
-            <motion.div
+          {movies.map((movie, idx) => (
+            <MovieCard
               key={movie.id}
-              whileTap={{ scale: 0.96 }}
-              transition={{ duration: 0.08, ease: 'easeOut' }}
-              onClick={(e) => {
-                if (isDraggingRef.current) return;
-                onMovieClick(movie, e.currentTarget.getBoundingClientRect());
-              }}
-              style={{ contain: 'paint' }}
-              className="flex-shrink-0 w-36 sm:w-44 aspect-[2/3] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group compositor-card"
-            >
-              {/* Full Poster Image */}
-              <img
-                src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
-                alt={movie.title}
-                referrerPolicy="no-referrer"
-                loading={idx < 4 ? 'eager' : 'lazy'}
-                decoding="async"
-                draggable={false}
-                onError={(e) => handleImageError(e, false)}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
-              />
-
-              {/* Seamless Canvas Gradient Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
-              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
-
-              {/* Top Bookmark Action Pill */}
-              <motion.button
-                whileTap={{ scale: 0.82 }}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleWatchlist(movie.id);
-                }}
-                className={`absolute top-2 right-2 p-1.5 rounded-full shadow-md transition-colors z-10 ${
-                  isSaved
-                    ? 'bg-neutral-200 text-neutral-950'
-                    : 'liquid-glass text-white hover:bg-white/20'
-                }`}
-                aria-label={isSaved ? 'Remove from watchlist' : 'Add to watchlist'}
-              >
-                <motion.div
-                  key={isSaved ? 'saved' : 'unsaved'}
-                  initial={{ scale: 0.6, rotate: isSaved ? -20 : 20 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                >
-                  {isSaved ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <Plus className="w-3.5 h-3.5" />
-                  )}
-                </motion.div>
-              </motion.button>
-
-              {/* Text Directly On Canvas */}
-              <div className="absolute inset-x-0 bottom-0 p-2.5 z-10 flex flex-col gap-0.5 pointer-events-none">
-                <h4 className="text-xs font-semibold text-white truncate leading-tight drop-shadow-sm">
-                  {movie.title}
-                </h4>
-                <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mt-0.5">
-                  <span className="flex items-center gap-1 font-medium text-white">
-                    <Star className="w-2.5 h-2.5 fill-white text-white" />
-                    {movie.score}
-                  </span>
-                  <span className="text-neutral-500">•</span>
-                  <span className="text-neutral-300 font-light">{movie.releaseYear}</span>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
+              movie={movie}
+              idx={idx}
+              isSaved={watchlist.includes(movie.id)}
+              onMovieClick={onMovieClick}
+              onToggleWatchlist={onToggleWatchlist}
+              isDraggingRef={isDraggingRef}
+            />
+          ))}
         </div>
       </div>
     </section>
   );
-};
+});
+
+MovieRow.displayName = 'MovieRow';
+

@@ -72,6 +72,8 @@ export interface Movie {
   anilistId?: number;
   malId?: number;
   title: string;
+  originalTitle?: string;
+  originalLanguage?: string;
   japaneseTitle?: string;
   tagline: string;
   synopsis: string;
@@ -81,6 +83,7 @@ export interface Movie {
   duration: string; // e.g. "2h 46m"
   genres: string[];
   director: string;
+  writers?: string[];
   cast: string[];
   posterUrl: string;
   posters?: string[];
@@ -160,6 +163,9 @@ export interface StreamItem {
   directProxyUrl?: string;
   directDownloadUrl?: string;
   rawDirectUrl?: string | null;
+  magnetUrl?: string;
+  torrentFileUrl?: string;
+  directVideoDownloadUrl?: string;
   isUnder5Gb?: boolean;
   isBestUnder5Gb?: boolean;
   rawDescription?: string;
@@ -169,6 +175,31 @@ export interface StreamItem {
   subtitlesText?: string;
   scraperRepo?: string;
   isDirect?: boolean;
+  adLevel?: 'none' | 'low' | 'moderate' | 'frequent' | 'high';
+  hasFrequentRedirects?: boolean;
+  redirectFrequency?: 'none' | 'rare' | 'frequent' | 'aggressive';
+  redirectNotice?: string;
+  adWarning?: string;
+  isAdHeavyMirror?: boolean;
+}
+
+export interface SourceAdReport {
+  id: string;
+  name: string;
+  serverName: string;
+  domain: string;
+  adLevel: 'none' | 'low' | 'moderate' | 'frequent' | 'high';
+  adLabel: string;
+  redirectFrequency: 'none' | 'rare' | 'frequent' | 'aggressive';
+  redirectLabel: string;
+  redirectDescription: string;
+  redirectNotice?: string;
+  isAdHeavyMirror?: boolean;
+  hasFrequentRedirects?: boolean;
+  adBlockRecommended: boolean;
+  trustScore: number;
+  category: 'direct' | 'clean_embed' | 'ad_heavy_mirror';
+  notes: string;
 }
 
 export interface AddonServerConfig {

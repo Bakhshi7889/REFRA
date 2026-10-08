@@ -20,6 +20,7 @@ import {
   Upload,
   LogOut,
   Sparkles,
+  Wifi,
   WifiOff,
   Gauge,
   ShieldCheck,
@@ -46,11 +47,22 @@ import { UiThemeConfig, DEFAULT_THEME_CONFIG, loadSavedThemeConfig, saveThemeCon
 import { getUserRegionInfo, setUserRegion, SUPPORTED_REGIONS } from '../services/regionStore';
 import { toWebpUrl } from '../utils/imageHelpers';
 import { usePWAInstall } from '../hooks/usePWAInstall';
+import {
+  getNetworkPreference,
+  setNetworkPreference,
+  detectIsWifi,
+  NetworkPreferenceMode,
+  NetworkStatus,
+} from '../services/networkManager';
+import {
+  upgradeCachedVisualsTo4K,
+  getHqCachedMoviesCount,
+} from '../services/visualQualityManager';
 
 interface EmbedSettingsState {
   embedServer: 'VidSrc Pro' | 'AutoEmbed VIP' | 'SuperEmbed HD' | '2Embed Stream';
   animeAudioPref: 'Japanese (Sub)' | 'English Dub' | 'Dual Audio';
-  subtitleLanguage: 'English' | 'Japanese' | 'Spanish' | 'French' | 'German' | 'Off';
+  subtitleLanguage: 'English' | 'Hindi' | 'Japanese' | 'Spanish' | 'French' | 'German' | 'Off';
   autoSkipIntro: boolean;
   autoPlayTrailers: boolean;
   traktScrobble: boolean;
@@ -128,6 +140,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isPurging, setIsPurging] = useState(false);
   const [regionInfo, setRegionInfo] = useState(() => getUserRegionInfo());
   const pwa = usePWAInstall();
+
+  // Wi-Fi / Internet detection & 4K visual state
+  const [networkStatus, setNetworkStatus] = useState<NetworkStatus>(() => detectIsWifi());
+  const [networkPref, setNetworkPref] = useState<NetworkPreferenceMode>(() => getNetworkPreference());
+  const [hqMoviesCount, setHqMoviesCount] = useState<number>(() => getHqCachedMoviesCount());
+  const [isUpgrading4k, setIsUpgrading4k] = useState(false);
+
+  useEffect(() => {
+    const handleNetworkEvt = (e: any) => {
+      setNetworkStatus(e.detail || detectIsWifi());
+      setNetworkPref(getNetworkPreference());
+      setHqMoviesCount(getHqCachedMoviesCount());
+    };
+    window.addEventListener('refra-network-changed', handleNetworkEvt);
+    window.addEventListener('refra-visuals-upgraded', handleNetworkEvt);
+    return () => {
+      window.removeEventListener('refra-network-changed', handleNetworkEvt);
+      window.removeEventListener('refra-visuals-upgraded', handleNetworkEvt);
+    };
+  }, []);
 
   const handleRegionSelect = (val: string) => {
     if (val === 'AUTO') {
@@ -344,22 +376,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         className="hidden"
       />
 
-      {/* ================= SECTION 1: DATA SAVER (AT TOP) ================= */}
-      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+      {/* ================= SECTION 1: NETWORK & DATA SAVER (4K WI-FI) ================= */}
+      <div className="rounded-3xl bg-neutral-900/40 backdrop-blur-2xl border border-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] flex flex-col gap-3.5">
+        {/* Header & Status Indicator */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
               className={`w-9 h-9 rounded-2xl flex items-center justify-center border transition-colors ${
-                activeThemeConfig.dataSaverMode
+                !activeThemeConfig.dataSaverMode
                   ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-white/5 text-neutral-300 border-white/10'
+                  : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
               }`}
             >
-              <WifiOff className="w-4 h-4" />
+              {!activeThemeConfig.dataSaverMode ? (
+                <Wifi className="w-4 h-4" />
+              ) : (
+                <WifiOff className="w-4 h-4" />
+              )}
             </div>
             <div>
-              <div className="text-xs font-semibold text-white">Data Saver</div>
-              <div className="text-[10px] text-neutral-400">Reduce video resolution & pause auto-play</div>
+              <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <span>Network & Visual Quality</span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
+                    !activeThemeConfig.dataSaverMode
+                      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                      : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                  }`}
+                >
+                  {!activeThemeConfig.dataSaverMode ? '4K Active' : 'Data Saver'}
+                </span>
+              </div>
+              <div className="text-[10px] text-neutral-400">
+                {networkStatus.isWifi
+                  ? 'Wi-Fi / Broadband connected • 4K UHD enabled'
+                  : networkStatus.effectiveType === 'cellular'
+                  ? 'Mobile Cellular detected • Data Saver enabled'
+                  : 'Automatic network detection active'}
+              </div>
             </div>
           </div>
 
@@ -367,17 +421,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             type="button"
             onClick={() => {
               const nextVal = !activeThemeConfig.dataSaverMode;
-              const nextCfg = { ...activeThemeConfig, dataSaverMode: nextVal };
+              const nextPref: NetworkPreferenceMode = nextVal ? 'always_on' : 'always_off';
+              const nextCfg: UiThemeConfig = {
+                ...activeThemeConfig,
+                dataSaverMode: nextVal,
+                networkDataSaverPreference: nextPref,
+              };
               handleThemeChange(nextCfg);
+              setNetworkPreference(nextPref);
               if (nextVal) {
                 updateSetting('autoPlayTrailers', false);
-                showToast('Data Saver on');
+                showToast('Data Saver on — reduced bandwidth');
               } else {
-                showToast('Data Saver off');
+                showToast('Data Saver off — 4K UHD visuals active');
               }
             }}
             className={`w-12 h-6.5 rounded-full transition-colors relative cursor-pointer ${
-              activeThemeConfig.dataSaverMode ? 'bg-emerald-400' : 'bg-white/10'
+              activeThemeConfig.dataSaverMode ? 'bg-amber-400' : 'bg-emerald-400'
             }`}
             aria-label="Toggle Data Saver"
           >
@@ -385,10 +445,110 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className={`w-5 h-5 rounded-full transition-transform duration-200 absolute top-[3px] ${
                 activeThemeConfig.dataSaverMode
                   ? 'translate-x-6 bg-neutral-950'
-                  : 'translate-x-1 bg-neutral-400'
+                  : 'translate-x-1 bg-neutral-950'
               }`}
             />
           </button>
+        </div>
+
+        {/* Network Mode Preference Switcher */}
+        <div className="pt-2.5 border-t border-white/5 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-neutral-300">Detection Mode</span>
+            <div className="flex items-center gap-1 bg-white/[0.06] p-1 rounded-full border border-white/10 shrink-0">
+              {(
+                [
+                  { id: 'auto' as const, label: 'Auto (Wi-Fi 4K)' },
+                  { id: 'always_off' as const, label: 'Always 4K' },
+                  { id: 'always_on' as const, label: 'Always Save' },
+                ] as const
+              ).map((opt) => {
+                const isSelected = networkPref === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={async () => {
+                      setNetworkPreference(opt.id);
+                      setNetworkPref(opt.id);
+                      const latestStatus = detectIsWifi();
+                      setNetworkStatus(latestStatus);
+                      const isDs = opt.id === 'always_on' ? true : opt.id === 'always_off' ? false : !latestStatus.isWifi;
+                      const nextCfg: UiThemeConfig = {
+                        ...activeThemeConfig,
+                        dataSaverMode: isDs,
+                        networkDataSaverPreference: opt.id,
+                      };
+                      handleThemeChange(nextCfg);
+                      if (opt.id === 'auto') {
+                        showToast(`Auto mode: ${latestStatus.isWifi ? 'Wi-Fi detected (4K enabled)' : 'Cellular detected (Data Saver on)'}`);
+                      } else if (opt.id === 'always_off') {
+                        showToast('Always 4K UHD enabled');
+                      } else {
+                        showToast('Always Data Saver enabled');
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-white text-neutral-950 shadow-sm'
+                        : 'text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4K Cache Upgrade & Retention Panel */}
+          <div className="flex items-center justify-between bg-white/[0.03] p-2.5 rounded-2xl border border-white/5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <div>
+                <div className="text-[11px] font-medium text-white flex items-center gap-1.5">
+                  <span>4K Visuals Cache</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/10 text-neutral-300 font-mono">
+                    {hqMoviesCount} stored
+                  </span>
+                </div>
+                <div className="text-[9px] text-neutral-400">
+                  Cached 4K visuals are preserved and never recached in low quality
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={isUpgrading4k}
+              onClick={async () => {
+                setIsUpgrading4k(true);
+                showToast('Upgrading cached artwork to 4K UHD...');
+                try {
+                  const res = await upgradeCachedVisualsTo4K();
+                  setHqMoviesCount(res.totalHqCount);
+                  showToast(`Upgraded ${res.upgradedCount} cached movies to 4K UHD!`);
+                } catch {
+                  showToast('4K cache upgrade complete');
+                } finally {
+                  setIsUpgrading4k(false);
+                }
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-[10px] font-semibold text-white transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer border border-white/10"
+            >
+              {isUpgrading4k ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+                  <span>Upgrading...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-3 h-3 text-emerald-400" />
+                  <span>Upgrade to 4K</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -537,8 +697,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {settings.subtitleLanguage}
               </span>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1">
-              {(['English', 'Japanese', 'Spanish', 'French', 'German', 'Off'] as const).map((lang) => (
+            <div className="grid grid-cols-3 sm:grid-cols-7 gap-1.5 pt-1">
+              {(['English', 'Hindi', 'Japanese', 'Spanish', 'French', 'German', 'Off'] as const).map((lang) => (
                 <button
                   key={lang}
                   type="button"
@@ -768,7 +928,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* ================= SECTION 6: APP IDENTITY & PWA STARTING ================= */}
+      {/* ================= SECTION 6: APP IDENTITY & PWA ================= */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 px-3">
           App Identity & PWA
@@ -781,18 +941,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
               <div>
                 <div className="text-xs font-semibold text-white">Refra Cinema v4.0</div>
-                <div className="text-[10px] text-neutral-400">PWA Vector Identity & Offline Shell</div>
+                <div className="text-[10px] text-neutral-400">Instant Direct Launch • Offline Shell</div>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('refra:replay-splash'))}
-              className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-all cursor-pointer active:scale-[0.96] border border-white/10"
-              title="Preview PWA starting screen"
-            >
-              Preview Start
-            </button>
+            <div className="px-3 py-1.5 rounded-full bg-white/5 text-neutral-300 text-[11px] font-medium border border-white/10">
+              Instant Launch
+            </div>
           </div>
         </div>
       </div>

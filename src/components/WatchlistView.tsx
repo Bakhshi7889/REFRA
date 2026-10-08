@@ -3,6 +3,7 @@ import { Bookmark, Star, Trash2, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
+import { triggerHaptic } from '../utils/haptics';
 
 interface WatchlistViewProps {
   watchlistMovies: Movie[];
@@ -60,40 +61,46 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" style={{ contain: 'layout paint' }}>
-          {watchlistMovies.map((movie) => (
+          {watchlistMovies.map((movie, idx) => (
             <motion.div
               key={movie.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: Math.min(idx * 0.04, 0.25), ease: 'easeOut' }}
+              whileHover={{ scale: 1.03, y: -4 }}
               whileTap={{ scale: 0.96 }}
-              transition={{ duration: 0.08, ease: 'easeOut' }}
-              style={{ willChange: 'transform', contain: 'layout paint' }}
-              className="media-card-item aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer"
-              onClick={(e) => onMovieClick(movie, e.currentTarget.getBoundingClientRect())}
+              style={{ willChange: 'transform' }}
+              className="media-card-item aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer hover:shadow-2xl hover:shadow-black/60 transition-shadow duration-300"
+              onClick={(e) => {
+                triggerHaptic('light');
+                onMovieClick(movie, e.currentTarget.getBoundingClientRect());
+              }}
             >
+              {/* Skeleton Loading Shimmer Placeholder */}
+              <div className="absolute inset-0 bg-neutral-800/50 animate-pulse pointer-events-none" />
+
               <img
-                src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
+                src={getPosterUrl(movie.posterUrl, 'w780', movie.backdropUrl)}
                 alt={movie.title}
                 referrerPolicy="no-referrer"
-                loading="lazy"
-                decoding="async"
                 draggable={false}
                 onError={(e) => handleImageError(e, false)}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none relative z-0"
               />
 
               {/* Seamless Canvas Gradient Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
-              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none z-1" />
+              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none z-1" />
 
               {/* Remove button: solid glass pill */}
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  triggerHaptic('medium');
                   onRemove(movie.id);
                 }}
-                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 hover:bg-rose-950/80 text-white z-10 transition-colors"
+                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 hover:bg-rose-950/80 text-white z-10 transition-colors cursor-pointer"
                 aria-label="Remove from watchlist"
               >
                 <Trash2 className="w-3.5 h-3.5 text-rose-300" />

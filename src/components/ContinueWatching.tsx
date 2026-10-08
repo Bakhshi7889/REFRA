@@ -10,7 +10,7 @@ interface ContinueWatchingProps {
   onOpenDetails: (movie: Movie, originRect?: DOMRect) => void;
 }
 
-export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
+export const ContinueWatching: React.FC<ContinueWatchingProps> = React.memo(({
   movies,
   onResume,
   onOpenDetails,
@@ -102,12 +102,18 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.08, ease: 'easeOut' }}
               style={{ willChange: 'transform', contain: 'paint' }}
-              className="media-card-item gpu-layer flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-2xl overflow-hidden shadow-lg snap-start cursor-pointer relative group"
+              className="media-card-item gpu-layer flex-shrink-0 w-64 sm:w-72 md:w-80 aspect-[16/10] bg-[#14161d] rounded-3xl overflow-hidden shadow-lg snap-start cursor-pointer relative group border border-white/10"
               onClick={() => {
                 if (isDraggingRef.current) return;
                 onResume(movie);
               }}
             >
+              {/* Last Played Floating Pill Badge */}
+              <div className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md border border-white/20 shadow-md text-white pointer-events-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#34d399]" />
+                <span className="text-[9px] font-bold uppercase tracking-wider text-white">Last Played</span>
+              </div>
+
               {/* Full Thumbnail */}
               <img
                 src={getBackdropUrl(movie.backdropUrl, 'w1280', movie.posterUrl)}
@@ -166,4 +172,7 @@ export const ContinueWatching: React.FC<ContinueWatchingProps> = ({
       </div>
     </section>
   );
-};
+});
+
+ContinueWatching.displayName = 'ContinueWatching';
+

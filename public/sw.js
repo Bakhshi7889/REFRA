@@ -138,7 +138,9 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/api/image') ||
     url.hostname.includes('images.unsplash.com') ||
     url.hostname.includes('fonts.gstatic.com') ||
-    url.hostname.includes('fonts.googleapis.com');
+    url.hostname.includes('fonts.googleapis.com') ||
+    url.hostname.includes('wsrv.nl') ||
+    url.hostname.includes('weserv.nl');
 
   if (isImageOrIcon) {
     event.respondWith(
@@ -156,13 +158,33 @@ self.addEventListener('fetch', (event) => {
 
           const networkResponse = await fetchPromise;
           if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
-            // Only cache local static assets and server image proxy to conserve mobile cache quota
-            if (!url.hostname.includes('image.tmdb.org') || url.pathname.startsWith('/api/image')) {
-              try {
-                const clone = networkResponse.clone();
-                caches.open(ICONS_IMAGES_CACHE).then((cache) => cache.put(event.request, clone)).catch(() => {});
-              } catch {}
-            }
+            const isHighQuality =
+              url.pathname.includes('/original/') ||
+              url.pathname.includes('/w1280/') ||
+              url.pathname.includes('/w780/') ||
+              url.search.includes('q=100') ||
+              url.hostname.includes('wsrv.nl') ||
+              url.hostname.includes('weserv.nl');
+
+            const isLowQuality =
+              url.pathname.includes('/w185/') ||
+              url.pathname.includes('/w300/') ||
+              url.search.includes('q=55');
+
+            // Cache static icons, image proxy, and high-quality visuals
+            try {
+              const cache = await caches.open(ICONS_IMAGES_CACHE);
+              // If incoming is low quality, check if a high quality entry already exists
+              if (isLowQuality) {
+                const existingHq = await cache.match(event.request.url.replace(/q=55/, 'q=100'));
+                if (existingHq) {
+                  // Do not recache in low quality
+                  return networkResponse;
+                }
+              }
+              const clone = networkResponse.clone();
+              await cache.put(event.request, clone);
+            } catch {}
           }
           return networkResponse;
         } catch {

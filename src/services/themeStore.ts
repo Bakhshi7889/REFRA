@@ -357,6 +357,7 @@ export interface UiThemeConfig {
 
   // Network & Bandwidth Optimization
   dataSaverMode: boolean; // Low-bandwidth optimization: pauses idle cycling, disables trailer autoplay, uses compressed w185/w342 posters, disables aggressive preloading
+  networkDataSaverPreference?: 'auto' | 'always_off' | 'always_on'; // 'auto' (detect Wi-Fi for 4K / mobile for data saver) | 'always_off' (4K UHD) | 'always_on' (Data Saver)
 
   // Image Delivery Routing & Resolution Settings
   imageRoutingMode?: 'anime_edge' | 'auto' | 'proxy' | 'direct'; // 'anime_edge' (Anime-style Cloudflare CDN mirror) | 'auto' (failover) | 'proxy' (force server proxy) | 'direct' (TMDB CDN only)
@@ -389,8 +390,9 @@ export const DEFAULT_THEME_CONFIG: UiThemeConfig = {
   glassClarity: 'crystalClear',
   glassWhiteWash: 0,
   dataSaverMode: false,
+  networkDataSaverPreference: 'auto',
   imageRoutingMode: 'anime_edge',
-  imageResolutionQuality: 'auto',
+  imageResolutionQuality: 'ultra',
 };
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -720,24 +722,17 @@ export async function setDataSaverMode(enabled: boolean): Promise<UiThemeConfig>
  * Gets the current image routing mode ('anime_edge' | 'auto' | 'proxy' | 'direct')
  */
 export function getImageRoutingMode(): ImageRoutingMode {
-  if (typeof window === 'undefined') return 'anime_edge';
+  if (typeof window === 'undefined') return 'auto';
   try {
     const raw = localStorage.getItem('refra_ui_theme_config');
     if (raw) {
       const cfg = JSON.parse(raw);
       if (cfg.imageRoutingMode) {
-        if (
-          cfg.imageRoutingMode === 'direct' ||
-          cfg.imageRoutingMode === 'proxy' ||
-          cfg.imageRoutingMode === 'auto'
-        ) {
-          return 'anime_edge';
-        }
         return cfg.imageRoutingMode;
       }
     }
   } catch {}
-  return 'anime_edge';
+  return 'auto';
 }
 
 /**

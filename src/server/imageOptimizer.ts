@@ -117,6 +117,13 @@ function isSafeUrl(rawUrl: string): boolean {
  * Converts requested image to WebP with on-the-fly resizing and server caching
  */
 export async function handleImageOptimization(req: Request, res: Response): Promise<void> {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
   let targetUrl = (req.query.url as string) || '';
   const pathParam = (req.query.path as string) || '';
   const widthParam = req.query.w ? parseInt(req.query.w as string, 10) : undefined;

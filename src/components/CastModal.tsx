@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Movie, StreamItem } from '../types';
 import { getPosterUrl, handleImageError } from '../utils/imageHelpers';
 import { lockScroll } from '../utils/scrollLock';
+import { castService, useCastState } from '../services/castService';
 
 export interface CastDevice {
   id: string;
@@ -294,7 +295,7 @@ export const CastModal: React.FC<CastModalProps> = ({
           {activeMovie && (
             <div className="mt-3 p-2.5 rounded-[18px] bg-white/[0.04] border border-white/8 flex items-center gap-2.5">
               <img
-                src={getPosterUrl(activeMovie.posterUrl, 'w185', activeMovie.backdropUrl)}
+                src={getPosterUrl(activeMovie.posterUrl, 'w342', activeMovie.backdropUrl)}
                 alt={activeMovie.title}
                 onError={(e) => handleImageError(e, false)}
                 className="w-9 h-12 object-cover rounded-[10px] shadow"
@@ -324,7 +325,10 @@ export const CastModal: React.FC<CastModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={onDisconnectDevice}
+                  onClick={() => {
+                    castService.disconnect();
+                    onDisconnectDevice();
+                  }}
                   className="text-[10px] font-semibold text-rose-300 hover:text-rose-200 cursor-pointer px-2 py-0.5 rounded-full bg-rose-500/10"
                 >
                   Disconnect
@@ -334,7 +338,10 @@ export const CastModal: React.FC<CastModalProps> = ({
               <div className="flex items-center justify-between gap-2 pt-0.5">
                 <button
                   type="button"
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={() => {
+                    castService.pause();
+                    setIsPlaying(!isPlaying);
+                  }}
                   className="px-3 py-1.5 rounded-xl bg-white text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow hover:bg-neutral-200 transition-colors"
                 >
                   {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
@@ -344,7 +351,10 @@ export const CastModal: React.FC<CastModalProps> = ({
                 <div className="flex items-center gap-2 flex-1 max-w-[180px]">
                   <button
                     type="button"
-                    onClick={() => setIsMuted(!isMuted)}
+                    onClick={() => {
+                      castService.mute();
+                      setIsMuted(!isMuted);
+                    }}
                     className="text-neutral-400 hover:text-white"
                   >
                     {isMuted || volume === 0 ? (
@@ -359,8 +369,10 @@ export const CastModal: React.FC<CastModalProps> = ({
                     max="100"
                     value={isMuted ? 0 : volume}
                     onChange={(e) => {
-                      setVolume(Number(e.target.value));
+                      const newVol = Number(e.target.value);
+                      setVolume(newVol);
                       setIsMuted(false);
+                      castService.volume(newVol / 100);
                     }}
                     className="flex-1 accent-emerald-400 h-1 bg-white/20 rounded-lg cursor-pointer"
                   />
@@ -518,6 +530,39 @@ export const CastModal: React.FC<CastModalProps> = ({
             {/* TAB 2: Native Wireless & AirPlay */}
             {activeTab === 'hardware' && (
               <div className="space-y-2.5">
+                {/* 1. Google Cast (Chromecast) via CastJS */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    castService.cast(directStreamUrl, {
+                      title: activeMovie?.title || 'Refra Cinema',
+                      poster: getPosterUrl(activeMovie?.posterUrl, 'w500'),
+                      description: activeMovie?.synopsis,
+                    });
+                  }}
+                  className="w-full p-3.5 rounded-[20px] bg-emerald-500 text-neutral-950 hover:bg-emerald-400 transition-all flex items-center justify-between cursor-pointer text-left shadow-lg shadow-emerald-500/25 active:scale-[0.98]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-neutral-950/15 flex items-center justify-center">
+                      <Cast className="w-5 h-5 text-neutral-950" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        <span>Google Cast (Chromecast)</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-neutral-950/15 font-semibold">
+                          Recommended
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-neutral-900/80 font-medium">
+                        Cast to Chromecast, Android TV, Google TV & Nest Hub
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-neutral-950 text-white shadow-sm">
+                    Cast
+                  </span>
+                </button>
+
                 {/* Native Browser Cast / AirPlay Button */}
                 <button
                   type="button"

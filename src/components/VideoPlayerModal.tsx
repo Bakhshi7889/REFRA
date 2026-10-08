@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   ArrowLeft,
   Play,
+  Pause,
   RotateCw,
   RefreshCw,
   Maximize,
@@ -32,13 +33,20 @@ import {
   RotateCcw,
   Download,
   ArrowDownUp,
+  AlertTriangle,
+  ExternalLink,
+  ShieldCheck,
+  Info,
+  Cast,
+  VolumeX,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie, AnimeEpisode, StreamItem } from '../types';
-import { getBackdropUrl, getPosterUrl, handleImageError } from '../utils/imageHelpers';
+import { getBackdropUrl, getPosterUrl, toWebpUrl, handleImageError } from '../utils/imageHelpers';
 import { saveIndexedDbHistoryItem } from '../services/indexedDb';
 import { scrobbleToTrakt } from '../services/traktApi';
 import { trackStreamStart } from '../services/analytics';
+import { useCastState, castService } from '../services/castService';
 import {
   computeStreamScore,
   getStreamBytes,
@@ -46,9 +54,15 @@ import {
   generateFallbackStreams,
   isStreamMatchingCurrentMovie,
   getStreamAudioInfo,
+  isAdHeavySource,
+  hasFrequentRedirects,
+  getSourceAdReport,
+  INTERNET_SOURCE_AD_REPORTS,
 } from '../utils/streamHelpers';
 import { ProviderLogo } from './ProviderLogo';
 import { lockScroll } from '../utils/scrollLock';
+import { useImageColors } from '../utils/colorExtractor';
+import { triggerHaptic } from '../utils/haptics';
 
 export interface StreamFilters {
   provider: string; // 'All' | provider name
@@ -80,6 +94,7 @@ interface VideoPlayerModalProps {
   initialEpisodeIndex?: number;
   selectedStream?: StreamItem | null;
   onOpenServerSelector?: () => void;
+  onOpenCast?: () => void;
 }
 
 function formatCurrency(amount: number | string | undefined): string | null {
@@ -99,9 +114,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   initialEpisodeIndex = 0,
   selectedStream,
   onOpenServerSelector,
+  onOpenCast,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const castState = useCastState();
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(initialEpisodeIndex);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isRotatedLandscape, setIsRotatedLandscape] = useState(false);
@@ -474,23 +491,30 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return new Set(Array.from(idMap.values()));
   }, [streams]);
 
-  // Filter streams and default order as BEST or Lowest Size by Quality
+  // Filter streams and default order as BEST or Lowest Size by Quality (ad-heavy/frequent-redirect sources always sorted to bottom)
   const filteredStreams = useMemo(() => {
     const list = streams.filter((s) => matchesFilters(s, appliedFilters));
-    if (sortByLowestSize) {
-      // Sort by quality tier first (4K > 1080p > 720p > 480p > 320p),
-      // and within each quality tier, sort by lowest file size ascending!
-      const getQualityRank = (q?: string): number => {
-        const norm = (q || '').toUpperCase();
-        if (norm.includes('4K') || norm.includes('2160')) return 5;
-        if (norm.includes('1080')) return 4;
-        if (norm.includes('720')) return 3;
-        if (norm.includes('480')) return 2;
-        if (norm.includes('320') || norm.includes('360') || norm.includes('240')) return 1;
-        return 0;
-      };
 
-      list.sort((a, b) => {
+    // Sort function: Clean/direct streams first, sources with frequent ads/redirects at the bottom
+    list.sort((a, b) => {
+      const aHeavy = Boolean(isAdHeavySource(a) || a.isAdHeavyMirror || hasFrequentRedirects(a));
+      const bHeavy = Boolean(isAdHeavySource(b) || b.isAdHeavyMirror || hasFrequentRedirects(b));
+      if (!aHeavy && bHeavy) return -1;
+      if (aHeavy && !bHeavy) return 1;
+
+      if (sortByLowestSize) {
+        // Sort by quality tier first (4K > 1080p > 720p > 480p > 320p),
+        // and within each quality tier, sort by lowest file size ascending!
+        const getQualityRank = (q?: string): number => {
+          const norm = (q || '').toUpperCase();
+          if (norm.includes('4K') || norm.includes('2160')) return 5;
+          if (norm.includes('1080')) return 4;
+          if (norm.includes('720')) return 3;
+          if (norm.includes('480')) return 2;
+          if (norm.includes('320') || norm.includes('360') || norm.includes('240')) return 1;
+          return 0;
+        };
+
         const qA = getQualityRank(a.quality);
         const qB = getQualityRank(b.quality);
         if (qA !== qB) {
@@ -501,11 +525,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         if (bytesA <= 0 && bytesB > 0) return 1;
         if (bytesB <= 0 && bytesA > 0) return -1;
         return bytesA - bytesB; // Lowest size first!
-      });
-    } else {
-      // Default as Best ranking
-      list.sort((a, b) => computeStreamScore(b) - computeStreamScore(a));
-    }
+      } else {
+        // Default as Best ranking
+        return computeStreamScore(b) - computeStreamScore(a);
+      }
+    });
+
     return list;
   }, [streams, appliedFilters, matchesFilters, sortByLowestSize]);
 
@@ -519,34 +544,48 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       const audioInfo = getStreamAudioInfo(streamToDownload);
       const cleanFileName = `${safeTitle} (${year}) [${quality}] [${audioInfo.languageText}].mp4`;
 
-      const rawUrl =
-        streamToDownload.directDownloadUrl ||
-        streamToDownload.rawDirectUrl ||
-        streamToDownload.url ||
-        `https://vidlink.pro/movie/${movie.tmdbId || '1084199'}`;
+      // 1. Direct .torrent file download
+      if (streamToDownload.torrentFileUrl) {
+        const torrentA = document.createElement('a');
+        torrentA.href = streamToDownload.torrentFileUrl;
+        torrentA.download = `${safeTitle} (${year}) [${quality}] [${audioInfo.languageText}].torrent`;
+        document.body.appendChild(torrentA);
+        torrentA.click();
+        document.body.removeChild(torrentA);
+      }
 
-      const isMagnet = rawUrl.startsWith('magnet:?');
+      // 2. Direct video stream download
+      if (streamToDownload.directVideoDownloadUrl) {
+        const videoA = document.createElement('a');
+        videoA.href = streamToDownload.directVideoDownloadUrl;
+        videoA.download = cleanFileName;
+        document.body.appendChild(videoA);
+        videoA.click();
+        document.body.removeChild(videoA);
+      }
 
-      if (isMagnet) {
+      // 3. Magnet dispatch
+      const magnet = streamToDownload.magnetUrl || (streamToDownload.url?.startsWith('magnet:?') ? streamToDownload.url : null);
+      if (magnet) {
         try {
-          navigator.clipboard.writeText(rawUrl);
+          navigator.clipboard.writeText(magnet);
         } catch {}
 
         const link = document.createElement('a');
-        link.href = rawUrl;
+        link.href = magnet;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      } else {
-        try {
-          navigator.clipboard.writeText(rawUrl);
-        } catch {}
+      } else if (!streamToDownload.torrentFileUrl && !streamToDownload.directVideoDownloadUrl) {
+        const rawUrl =
+          streamToDownload.directDownloadUrl ||
+          streamToDownload.rawDirectUrl ||
+          streamToDownload.url ||
+          `/api/stream/download?title=${encodeURIComponent(safeTitle)}&year=${year}&quality=${quality}`;
 
         const link = document.createElement('a');
         link.href = rawUrl;
         link.download = cleanFileName;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -558,7 +597,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         quality,
         audio: audioInfo.fullLabel,
         size: streamToDownload.fileSize || 'Auto Size',
-        isMagnet,
+        isMagnet: Boolean(magnet),
       });
 
       setTimeout(() => {
@@ -769,6 +808,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   }, [isOpen, movie, activeStream]);
 
   const currentMovie = detailedMovie || movie;
+  const { colors: liveColors } = useImageColors(
+    currentMovie?.backdropUrl || currentMovie?.posterUrl,
+    currentMovie?.title || 'Refra Cinema'
+  );
   const currentServerTitle = activeStream?.serverName || 'PenguPlay';
   const currentQualityTitle = activeStream?.quality || '4K';
 
@@ -805,21 +848,82 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             : 'w-full h-full'
         }`}
       >
-        {/* ================= ATMOSPHERIC MOVIE ARTWORK AMBIENT BACKDROP BLUR ================= */}
+        {/* ================= LIVE DYNAMIC ARTWORK GRADIENT & AMBIENT BLUR ================= */}
         <div
           className="absolute inset-0 pointer-events-none overflow-hidden z-0 bg-[#08090d]"
           style={{ transform: 'translateZ(0)' }}
         >
+          {/* 1. Underlying Movie Artwork Backdrop (blended) */}
           <img
             src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
             alt=""
             onError={(e) => handleImageError(e, true)}
-            className="w-full h-full object-cover filter blur-[70px] sm:blur-[90px] scale-125 opacity-55 saturate-[175%] brightness-[0.75]"
+            className="w-full h-full object-cover filter blur-[60px] sm:blur-[80px] scale-125 opacity-35 saturate-[160%] brightness-[0.70]"
             style={{ willChange: 'transform' }}
           />
-          {/* Layered cinematic atmospheric vignette that keeps typography crisp while letting the vibrant blur glow */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#08090d]/35 via-[#08090d]/65 to-[#08090d]/92" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgba(8,9,13,0.5)_60%,rgba(8,9,13,0.88)_100%)]" />
+
+          {/* 2. Live Organic Animated Gradient Mesh (Drifting Hue Nodes) */}
+          <div className="absolute inset-0 overflow-hidden mix-blend-screen opacity-70 pointer-events-none">
+            {/* Primary Dominant / Accent Ambient Orb (Pulsing Top Left) */}
+            <motion.div
+              animate={{
+                x: ['-4%', '8%', '-3%'],
+                y: ['-4%', '6%', '-4%'],
+                scale: [1, 1.12, 1],
+              }}
+              transition={{
+                duration: 16,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+              className="absolute -top-[20%] -left-[10%] w-[75vw] h-[75vw] max-w-[900px] max-h-[900px] rounded-full filter blur-[90px] sm:blur-[130px] opacity-60"
+              style={{
+                backgroundColor: liveColors.accent,
+                transition: 'background-color 1.2s ease',
+              }}
+            />
+
+            {/* Secondary Harmonic Ambient Orb (Drifting Bottom Right) */}
+            <motion.div
+              animate={{
+                x: ['4%', '-7%', '4%'],
+                y: ['5%', '-6%', '5%'],
+                scale: [1.05, 0.95, 1.05],
+              }}
+              transition={{
+                duration: 20,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+              className="absolute -bottom-[20%] -right-[10%] w-[70vw] h-[70vw] max-w-[850px] max-h-[850px] rounded-full filter blur-[95px] sm:blur-[140px] opacity-45"
+              style={{
+                backgroundColor: liveColors.secondary,
+                transition: 'background-color 1.2s ease',
+              }}
+            />
+
+            {/* Center Dynamic Glow Node directly under the stage */}
+            <motion.div
+              animate={{
+                scale: [0.96, 1.08, 0.96],
+                opacity: [0.35, 0.55, 0.35],
+              }}
+              transition={{
+                duration: 10,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
+              className="absolute top-[20%] left-[20%] right-[20%] h-[50vh] rounded-full filter blur-[80px] sm:blur-[120px]"
+              style={{
+                backgroundColor: liveColors.glow,
+                transition: 'background-color 1.2s ease',
+              }}
+            />
+          </div>
+
+          {/* 3. Layered cinematic atmospheric vignette that keeps typography crisp while letting the vibrant live gradient glow */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#08090d]/40 via-[#08090d]/68 to-[#08090d]/94" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgba(8,9,13,0.45)_60%,rgba(8,9,13,0.92)_100%)]" />
         </div>
 
         {/* ================= FLOATING TOP NAVIGATION WITH SIGNATURE BLUR ================= */}
@@ -836,6 +940,46 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
               <span>Back</span>
             </button>
+
+            {/* Cast Quick Pill Button */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (castState.isConnected) {
+                  if (onOpenCast) {
+                    onOpenCast();
+                  }
+                  return;
+                }
+                const currentMv = detailedMovie || movie;
+                if (!currentMv) return;
+
+                const streamUrl =
+                  activeStream?.directDownloadUrl ||
+                  activeStream?.rawDirectUrl ||
+                  activeStream?.url ||
+                  (currentMv.tmdbId
+                    ? `https://vidlink.pro/movie/${currentMv.tmdbId}`
+                    : `https://vidsrc.to/embed/movie/${currentMv.id}`);
+
+                castService.cast(streamUrl, {
+                  title: currentMv.title,
+                  poster: getPosterUrl(currentMv.posterUrl, 'w500'),
+                  description: currentMv.synopsis || currentMv.tagline,
+                });
+              }}
+              aria-label={castState.isConnected ? `Casting to ${castState.deviceName}` : 'Cast to Screen / Chromecast'}
+              title={castState.isConnected ? `Casting to ${castState.deviceName}` : 'Google Cast (Chromecast) / AirPlay'}
+              className={`px-3.5 py-2 rounded-full backdrop-blur-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 cursor-pointer active:scale-95 shadow-2xl border pointer-events-auto ${
+                castState.isConnected
+                  ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                  : 'liquid-glass hover:bg-white/20 text-white border-white/10'
+              }`}
+            >
+              <Cast className={`w-3.5 h-3.5 ${castState.isConnected ? 'text-emerald-400 animate-pulse' : 'text-neutral-300'}`} />
+              <span>{castState.isConnected ? `Casting: ${castState.deviceName}` : 'Cast to TV'}</span>
+            </button>
           </div>
         )}
 
@@ -851,14 +995,87 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           {/* ================= 1. SIGNATURE BIG IMAGE FIRST / VIDEO PLAYER STAGE ================= */}
           <section
             onDoubleClick={handleDoubleTap}
+            style={{
+              boxShadow: isFullscreen
+                ? 'none'
+                : `0 24px 60px -15px ${liveColors.glow}, 0 0 35px -8px ${liveColors.glow}`,
+              transition: 'box-shadow 0.8s ease',
+            }}
             className={`relative mx-auto overflow-hidden bg-black/90 shadow-2xl ${
               isFullscreen
                 ? 'w-full h-full rounded-none'
                 : 'w-full aspect-[16/9] max-h-[62vh] rounded-2xl sm:rounded-3xl'
             }`}
           >
-            {/* If stream is playing: Show embed or video */}
-            {activeStreamUrl ? (
+            {/* If Casting is Active: Show Cast Remote Screen Overlay */}
+            {castState.isConnected ? (
+              <div className="relative w-full h-full flex flex-col items-center justify-center p-6 text-center overflow-hidden bg-black/95">
+                <img
+                  src={getBackdropUrl(currentMovie.backdropUrl, 'w1280', currentMovie.posterUrl)}
+                  alt={currentMovie.title}
+                  className="absolute inset-0 w-full h-full object-cover filter blur-md scale-105 opacity-25"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/60 to-black/95" />
+
+                <div className="relative z-10 max-w-md w-full flex flex-col items-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] animate-pulse">
+                    <Cast className="w-8 h-8" />
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      Casting to {castState.deviceName}
+                    </div>
+                    <h2 className="text-xl font-bold text-white mt-1 line-clamp-1">{currentMovie.title}</h2>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {castState.paused ? 'Paused on Receiver' : 'Playing on Chromecast / Smart TV'}
+                    </p>
+                  </div>
+
+                  {/* Remote Controls */}
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => castService.seek(Math.max(0, castState.time - 15))}
+                      className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                      title="Rewind 15s"
+                      aria-label="Rewind 15 seconds"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => castService.pause()}
+                      className="px-5 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-sm flex items-center gap-2 transition-transform active:scale-95 shadow-lg shadow-emerald-500/25 cursor-pointer"
+                    >
+                      {castState.paused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
+                      <span>{castState.paused ? 'Resume' : 'Pause'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => castService.mute()}
+                      className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                      title={castState.muted ? 'Unmute' : 'Mute'}
+                      aria-label={castState.muted ? 'Unmute' : 'Mute'}
+                    >
+                      {castState.muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {/* Disconnect button */}
+                  <button
+                    type="button"
+                    onClick={() => castService.disconnect()}
+                    className="text-xs text-neutral-400 hover:text-rose-300 transition-colors pt-2 underline underline-offset-4 cursor-pointer"
+                  >
+                    Disconnect from {castState.deviceName}
+                  </button>
+                </div>
+              </div>
+            ) : activeStreamUrl ? (
               isEmbed ? (
                 <iframe
                   key={`${activeStreamUrl}_${keyReloadIndex}_${episodeNumber}`}
@@ -876,6 +1093,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   playsInline
                   controls
                   autoPlay
+                  {...{ 'x-webkit-airplay': 'allow' }}
                   className="w-full h-full object-contain cursor-pointer"
                 />
               )
@@ -1544,117 +1762,158 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
                               const specBadges = parseStreamSpecBadges(s, 6);
                               const audioInfo = getStreamAudioInfo(s);
+                              const isAdHeavy = Boolean(isAdHeavySource(s) || s.isAdHeavyMirror || hasFrequentRedirects(s));
+                              const prevStream = idx > 0 ? filteredStreams[idx - 1] : null;
+                              const isFirstAdHeavy = isAdHeavy && (!prevStream || !(isAdHeavySource(prevStream) || prevStream.isAdHeavyMirror || hasFrequentRedirects(prevStream)));
 
                               return (
-                                <div
-                                  key={s.id || `${s.name}_${idx}`}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => {
-                                    setActiveStream(s);
-                                    setIsDropdownOpen(false);
-                                    showToast(
-                                      `Connected: ${s.quality || '4K'} Stream`,
-                                      `${s.fileSize || 'UHD'} • ${s.specs || ''}`
-                                    );
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
+                                <React.Fragment key={s.id || `${s.name}_${idx}`}>
+                                  {/* Section Header for Ad-Heavy and Redirecting Web Mirrors at bottom */}
+                                  {isFirstAdHeavy && (
+                                    <div className="pt-2 pb-1">
+                                      <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2 shadow-xs">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <AlertTriangle className="w-3.5 h-3.5 text-amber-300 stroke-[2.5] shrink-0" />
+                                          <span className="text-[11px] font-bold text-amber-200 truncate">
+                                            Web Mirrors (Shows Ads More • Frequent Redirects)
+                                          </span>
+                                        </div>
+                                        <span className="text-[10px] text-amber-300/80 font-mono shrink-0">Sorted to bottom</span>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => {
+                                      triggerHaptic('light');
                                       setActiveStream(s);
                                       setIsDropdownOpen(false);
-                                    }
-                                  }}
-                                  className={`w-full p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 active:scale-[0.99] relative overflow-hidden select-none ${
-                                    isSelected
-                                      ? 'bg-white/10 border-white/40 shadow-lg shadow-black/40'
-                                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10'
-                                  }`}
-                                >
-                                  {/* Left Details: BIG Movie Name and Squircle Specs Badges (min-w-0 flex-1 pr-2 prevents overlapping) */}
-                                  <div className="min-w-0 flex-1 pr-2 space-y-1.5">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate leading-snug">
-                                        {s.movieName || s.title || currentMovie.title}
-                                      </h4>
+                                      showToast(
+                                        `Connected: ${s.quality || '1080p'} Stream`,
+                                        isAdHeavy ? 'Web Mirror (AdBlock Recommended)' : `${s.fileSize || 'UHD'} • ${s.specs || ''}`
+                                      );
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        triggerHaptic('light');
+                                        setActiveStream(s);
+                                        setIsDropdownOpen(false);
+                                      }
+                                    }}
+                                    className={`w-full p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 active:scale-[0.99] relative overflow-hidden select-none ${
+                                      isSelected
+                                        ? 'bg-white/10 border-white/40 shadow-lg shadow-black/40'
+                                        : isAdHeavy
+                                        ? 'bg-amber-950/20 hover:bg-amber-950/40 border-amber-500/20'
+                                        : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10'
+                                    }`}
+                                  >
+                                    {/* Left Details: BIG Movie Name and Squircle Specs Badges (min-w-0 flex-1 pr-2 prevents overlapping) */}
+                                    <div className="min-w-0 flex-1 pr-2 space-y-1.5">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="text-xs sm:text-sm font-bold text-white tracking-tight truncate leading-snug">
+                                          {s.movieName || s.title || currentMovie.title}
+                                        </h4>
 
-                                      {/* Highlight Lowest Size for Quality if active */}
-                                      {sortByLowestSize && lowestSizeStreamIds.has(s.id) && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
-                                          <span>⚡ Lowest {s.quality || 'HD'}</span>
+                                        {/* Highlight Lowest Size for Quality if active */}
+                                        {sortByLowestSize && lowestSizeStreamIds.has(s.id) && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
+                                            <span>⚡ Lowest {s.quality || 'HD'}</span>
+                                          </span>
+                                        )}
+
+                                        {/* Highlight Best Under 5GB Stream */}
+                                        {!sortByLowestSize && s.id === bestUnder5GbStream?.id && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
+                                            <span>★ Best &lt; 5GB</span>
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Specs Badges: Audio Track Knowledge Badge + Spec Badges */}
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {/* Clear Audio Track Knowledge */}
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] bg-white/10 text-neutral-100 border border-white/20 select-none whitespace-nowrap">
+                                          <Volume2 className="w-3 h-3 text-neutral-300 stroke-[2.5]" />
+                                          <span>Audio: {audioInfo.badgeLabel}</span>
                                         </span>
+
+                                        {specBadges.map((badge) => (
+                                          <span
+                                            key={badge.id}
+                                            className={`inline-flex items-center justify-center px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] select-none whitespace-nowrap ${
+                                              badge.isBest
+                                                ? 'bg-white text-black font-bold border border-white shadow-xs'
+                                                : 'bg-transparent text-white font-medium border border-white/40'
+                                            }`}
+                                          >
+                                            {badge.label}
+                                          </span>
+                                        ))}
+                                      </div>
+
+                                      {/* Ad Heavy / Frequent Redirect Badges */}
+                                      {isAdHeavy && (
+                                        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-200 border border-amber-500/30">
+                                            <span>⚠️ Shows Ads More</span>
+                                          </span>
+                                          {Boolean(s.hasFrequentRedirects || hasFrequentRedirects(s)) && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded bg-red-500/20 text-red-200 border border-red-500/30">
+                                              <ExternalLink className="w-2.5 h-2.5" />
+                                              <span>Frequent Redirects</span>
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] text-neutral-400">
+                                            {s.redirectNotice || 'Opens external ad pages on play click'}
+                                          </span>
+                                        </div>
                                       )}
 
-                                      {/* Highlight Best Under 5GB Stream */}
-                                      {!sortByLowestSize && s.id === bestUnder5GbStream?.id && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-white text-black font-mono text-[10px] font-bold shadow-xs whitespace-nowrap">
-                                          <span>★ Best &lt; 5GB</span>
-                                        </span>
+                                      {/* Optional Source Host */}
+                                      {s.sourceHost && (
+                                        <div className="text-[10px] sm:text-[11px] text-neutral-400 font-light truncate">
+                                          <span>Source: {s.sourceHost}</span>
+                                        </div>
                                       )}
                                     </div>
 
-                                    {/* Specs Badges: Audio Track Knowledge Badge + Spec Badges */}
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      {/* Clear Audio Track Knowledge */}
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] bg-white/10 text-neutral-100 border border-white/20 select-none whitespace-nowrap">
-                                        <Volume2 className="w-3 h-3 text-neutral-300 stroke-[2.5]" />
-                                        <span>Audio: {audioInfo.badgeLabel}</span>
-                                      </span>
+                                    {/* Right side: 1-Tap Frictionless Download, Provider Logo & Selection Checkmark */}
+                                    <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSeamlessDownload(s);
+                                        }}
+                                        className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-neutral-200 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-white/15 shadow-xs"
+                                        title={`Download ${s.quality || ''} • Audio: ${audioInfo.fullLabel}`}
+                                        aria-label="Download movie stream"
+                                      >
+                                        {downloadNotice?.streamId === s.id ? (
+                                          <Check className="w-3.5 h-3.5 stroke-[3] text-emerald-400" />
+                                        ) : (
+                                          <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                                        )}
+                                      </button>
 
-                                      {specBadges.map((badge) => (
-                                        <span
-                                          key={badge.id}
-                                          className={`inline-flex items-center justify-center px-2 py-0.5 text-[10px] sm:text-[11px] font-mono tracking-tight rounded-[4px] select-none whitespace-nowrap ${
-                                            badge.isBest
-                                              ? 'bg-white text-black font-bold border border-white shadow-xs'
-                                              : 'bg-transparent text-white font-medium border border-white/40'
-                                          }`}
-                                        >
-                                          {badge.label}
-                                        </span>
-                                      ))}
-                                    </div>
+                                      <ProviderLogo
+                                        serverName={s.serverName}
+                                        logoUrl={s.serverLogo}
+                                        className="w-9 h-9 sm:w-10 sm:h-10 shrink-0"
+                                      />
 
-                                    {/* Optional Source Host */}
-                                    {s.sourceHost && (
-                                      <div className="text-[10px] sm:text-[11px] text-neutral-400 font-light truncate">
-                                        <span>Source: {s.sourceHost}</span>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Right side: 1-Tap Frictionless Download, Provider Logo & Selection Checkmark */}
-                                  <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleSeamlessDownload(s);
-                                      }}
-                                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 text-neutral-200 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-white/15 shadow-xs"
-                                      title={`Download ${s.quality || ''} • Audio: ${audioInfo.fullLabel}`}
-                                      aria-label="Download movie stream"
-                                    >
-                                      {downloadNotice?.streamId === s.id ? (
-                                        <Check className="w-3.5 h-3.5 stroke-[3] text-emerald-400" />
-                                      ) : (
-                                        <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                                      {isSelected && (
+                                        <div className="w-6 h-6 rounded-[5px] bg-white text-black flex items-center justify-center font-bold shrink-0 shadow-md">
+                                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                        </div>
                                       )}
-                                    </button>
-
-                                    <ProviderLogo
-                                      serverName={s.serverName}
-                                      logoUrl={s.serverLogo}
-                                      className="w-9 h-9 sm:w-10 sm:h-10 shrink-0"
-                                    />
-
-                                    {isSelected && (
-                                      <div className="w-6 h-6 rounded-[5px] bg-white text-black flex items-center justify-center font-bold shrink-0 shadow-md">
-                                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                      </div>
-                                    )}
+                                    </div>
                                   </div>
-                                </div>
+                                </React.Fragment>
                               );
                             })
                           ) : (
@@ -1820,12 +2079,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       >
                         {actor.profileUrl ? (
                           <img
-                            src={actor.profileUrl}
+                            src={toWebpUrl(actor.profileUrl, 120, undefined, 'profile')}
                             alt={actor.name}
+                            referrerPolicy="no-referrer"
                             onError={(e) => {
-                              e.currentTarget.style.display = 'none';
+                              const img = e.currentTarget;
+                              if (img.dataset.retried !== 'true' && actor.profileUrl && img.src !== actor.profileUrl) {
+                                img.dataset.retried = 'true';
+                                img.src = actor.profileUrl;
+                              } else {
+                                img.style.display = 'none';
+                              }
                             }}
-                            className="w-10 h-10 rounded-full object-cover shrink-0 shadow-sm"
+                            className="w-10 h-10 rounded-full object-cover shrink-0 shadow-sm ring-1 ring-white/10"
                           />
                         ) : (
                           <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center shrink-0 text-xs font-bold text-neutral-300">
@@ -1863,27 +2129,45 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto hide-scrollbar py-1">
-                      {currentMovie.episodes.map((ep, idx) => {
-                        const isCurrent = currentEpisodeIndex === idx;
-                        return (
-                          <button
-                            key={ep.id}
-                            type="button"
-                            onClick={() => {
-                              setCurrentEpisodeIndex(idx);
-                              showToast(`Loading Episode ${ep.number}`, ep.title || 'Switching stream...');
-                            }}
-                            className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-[0.96] text-center ${
-                              isCurrent
-                                ? 'bg-white text-black font-bold shadow-md'
-                                : 'bg-white/5 text-neutral-300 hover:text-white'
-                            }`}
-                          >
-                            EP {ep.number}
-                          </button>
-                        );
-                      })}
+                    <div className="relative h-48 sm:h-56 overflow-hidden rounded-2xl bg-black/40 border border-white/5">
+                      <div className="absolute top-1/2 left-0 right-0 h-10 -translate-y-1/2 bg-white/10 border-y border-white/20 pointer-events-none z-0"></div>
+                      <div className="absolute inset-0 pointer-events-none z-10 bg-gradient-to-b from-[#14161f] via-transparent to-[#14161f]"></div>
+                      <div 
+                        className="h-full overflow-y-auto hide-scrollbar snap-y snap-mandatory relative z-20 scroll-smooth"
+                        onScroll={(e) => {
+                          const container = e.currentTarget;
+                          const itemHeight = 40; // 10 units
+                          const index = Math.round(container.scrollTop / itemHeight);
+                          if (index !== currentEpisodeIndex && index >= 0 && index < currentMovie.episodes!.length) {
+                            // Only update visually, don't trigger stream reload on every scroll tick
+                            // We can use a debounced update or a separate state for visual selection vs active stream
+                          }
+                        }}
+                      >
+                        <div className="h-[calc(50%-20px)] flex-shrink-0"></div>
+                        {currentMovie.episodes.map((ep, idx) => {
+                          const isCurrent = currentEpisodeIndex === idx;
+                          return (
+                            <button
+                              key={ep.id}
+                              type="button"
+                              onClick={(e) => {
+                                setCurrentEpisodeIndex(idx);
+                                showToast(`Loading Episode ${ep.number}`, ep.title || 'Switching stream...');
+                                e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }}
+                              className={`w-full h-10 flex items-center justify-center snap-center text-sm transition-all cursor-pointer select-none ${
+                                isCurrent
+                                  ? 'text-white font-bold text-base scale-110 drop-shadow-[0_2px_8px_rgba(255,255,255,0.5)]'
+                                  : 'text-neutral-500 hover:text-neutral-300 font-medium scale-95'
+                              }`}
+                            >
+                              Episode {ep.number} {ep.title ? `- ${ep.title}` : ''}
+                            </button>
+                          );
+                        })}
+                        <div className="h-[calc(50%-20px)] flex-shrink-0"></div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1996,19 +2280,27 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       <div className="flex items-center gap-3 flex-wrap">
                         {currentMovie.productionCompaniesList.map((comp) => {
                           if (!comp.logoUrl) return null;
+                          const logoSrc = toWebpUrl(comp.logoUrl, 260, undefined, 'logo');
                           return (
                             <div
                               key={comp.name}
                               title={comp.name}
-                              className="px-4 py-2.5 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-lg"
+                              className="px-3.5 py-2 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center shadow-md"
                             >
                               <img
-                                src={comp.logoUrl}
+                                src={logoSrc}
                                 alt={comp.name}
+                                referrerPolicy="no-referrer"
                                 onError={(e) => {
-                                  (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                                  const img = e.currentTarget;
+                                  if (img.dataset.retried !== 'true' && comp.logoUrl && img.src !== comp.logoUrl) {
+                                    img.dataset.retried = 'true';
+                                    img.src = comp.logoUrl;
+                                  } else {
+                                    (img.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                                  }
                                 }}
-                                className="h-10 sm:h-12 max-w-[140px] object-contain filter invert brightness-200"
+                                className="h-7 sm:h-8 max-w-[120px] object-contain drop-shadow"
                               />
                             </div>
                           );
@@ -2052,6 +2344,45 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       <span>{currentMovie.awards}</span>
                     </div>
                   )}
+                </div>
+
+                {/* Internet Sources & Ad/Redirect Safety Intelligence */}
+                <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/[0.04] space-y-3 backdrop-blur-xl border border-white/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Internet Sources & Redirect Intelligence</span>
+                    </h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-neutral-300 font-mono">
+                      Data from web
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-neutral-300 leading-relaxed">
+                    Streaming source performance verified with real-time internet data: sources that show ads more frequently or trigger redirects when clicking play are systematically ranked at the bottom of the server list.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Direct Cloud Streams (Top of List)</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-300 mt-1">
+                        PenguPlay, HdHub, WebStreamr, Torrentio, Comet. 0 ad popups and zero redirects.
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                      <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Web Mirrors (Bottom of List)</span>
+                      </div>
+                      <p className="text-[11px] text-neutral-300 mt-1">
+                        AutoEmbed, VidSrc, 2Embed, SmashyStream, SuperEmbed. Shows ads more frequently and triggers external redirects on click.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

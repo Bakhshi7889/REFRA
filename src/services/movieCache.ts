@@ -3,6 +3,11 @@ import { getBackdropUrl } from '../utils/imageHelpers';
 import { isDataSaverActive } from './themeStore';
 import { getIndexedDbSetting, saveIndexedDbSetting } from './indexedDb';
 import { setCachedSWR } from './swrCache';
+import {
+  preserveHighQualityVisuals,
+  upgradeMovieTo4K,
+  isHighQualityMovie,
+} from './visualQualityManager';
 
 export interface CachedCatalog {
   spotlightMovies: Movie[];
@@ -139,8 +144,32 @@ export function save6HourCache(catalog: CachedCatalog): void {
   if (typeof window === 'undefined') return;
 
   try {
+    const isDataSaver = isDataSaverActive();
+
+    // Process lists:
+    // 1. If on Wi-Fi (Data Saver OFF), upgrade to 4K studio quality
+    // 2. If on Cellular (Data Saver ON), preserve existing high quality visuals so they are NEVER recached in low quality
+    const processList = (list?: Movie[]): Movie[] => {
+      if (!list || list.length === 0) return [];
+      if (!isDataSaver) {
+        return list.map((m) => upgradeMovieTo4K(m));
+      }
+      return preserveHighQualityVisuals(list);
+    };
+
     const enrichedCatalog: CachedCatalog = {
       ...catalog,
+      spotlightMovies: processList(catalog.spotlightMovies),
+      trendingMovies: processList(catalog.trendingMovies),
+      animeMovies: processList(catalog.animeMovies),
+      topRatedMovies: processList(catalog.topRatedMovies),
+      scifiMovies: processList(catalog.scifiMovies),
+      actionMovies: processList(catalog.actionMovies),
+      thrillerMovies: processList(catalog.thrillerMovies),
+      indiaTrending: processList(catalog.indiaTrending),
+      bollywoodMovies: processList(catalog.bollywoodMovies),
+      southMovies: processList(catalog.southMovies),
+      indiaSeries: processList(catalog.indiaSeries),
       timestamp: Date.now(),
     };
 
@@ -155,21 +184,21 @@ export function save6HourCache(catalog: CachedCatalog): void {
 
     // Add movies to the offline pool for instant offline search & details
     indexMoviesIntoOfflinePool([
-      ...(catalog.spotlightMovies || []),
-      ...(catalog.trendingMovies || []),
-      ...(catalog.animeMovies || []),
-      ...(catalog.topRatedMovies || []),
-      ...(catalog.scifiMovies || []),
-      ...(catalog.actionMovies || []),
-      ...(catalog.thrillerMovies || []),
-      ...(catalog.indiaTrending || []),
-      ...(catalog.bollywoodMovies || []),
-      ...(catalog.southMovies || []),
-      ...(catalog.indiaSeries || []),
+      ...(enrichedCatalog.spotlightMovies || []),
+      ...(enrichedCatalog.trendingMovies || []),
+      ...(enrichedCatalog.animeMovies || []),
+      ...(enrichedCatalog.topRatedMovies || []),
+      ...(enrichedCatalog.scifiMovies || []),
+      ...(enrichedCatalog.actionMovies || []),
+      ...(enrichedCatalog.thrillerMovies || []),
+      ...(enrichedCatalog.indiaTrending || []),
+      ...(enrichedCatalog.bollywoodMovies || []),
+      ...(enrichedCatalog.southMovies || []),
+      ...(enrichedCatalog.indiaSeries || []),
     ]);
 
-    // Only minimal preload if Data Saver is not active
-    if (!isDataSaverActive()) {
+    // Preload hero banner visual in 4K if on Wi-Fi / Data Saver off
+    if (!isDataSaver) {
       preloadCatalogImages(enrichedCatalog);
     }
   } catch (err) {
@@ -179,6 +208,7 @@ export function save6HourCache(catalog: CachedCatalog): void {
 
 /**
  * Indexes movies into a capped offline pool (up to 400 titles) for zero-internet search.
+ * Ensures that if a title already has high-quality 4K visuals, they are preserved and never recached in low quality.
  */
 export function indexMoviesIntoOfflinePool(movies: Movie[]): void {
   if (typeof window === 'undefined' || !movies || movies.length === 0) return;
@@ -194,9 +224,21 @@ export function indexMoviesIntoOfflinePool(movies: Movie[]): void {
       }
     }
 
-    for (const m of movies) {
-      if (m && m.id) {
-        pool[m.id] = m;
+    for (const incoming of movies) {
+      if (incoming && incoming.id) {
+        const existing = pool[incoming.id];
+        // If this movie was already cached in high quality, NEVER recache in low quality!
+        if (existing && isHighQualityMovie(existing) && !isHighQualityMovie(incoming)) {
+          pool[incoming.id] = {
+            ...incoming,
+            posterUrl: existing.posterUrl,
+            backdropUrl: existing.backdropUrl,
+            backdrops: existing.backdrops && existing.backdrops.length > 0 ? existing.backdrops : incoming.backdrops,
+            posters: existing.posters && existing.posters.length > 0 ? existing.posters : incoming.posters,
+          };
+        } else {
+          pool[incoming.id] = incoming;
+        }
       }
     }
 

@@ -231,41 +231,54 @@ export const DownloadExpander: React.FC<DownloadExpanderProps> = ({
     const year = movie.releaseYear || '';
     const cleanFileName = `${safeTitle} (${year}) [${quality}].mp4`;
 
-    const rawUrl =
-      streamToDownload.directDownloadUrl ||
-      streamToDownload.rawDirectUrl ||
-      streamToDownload.url ||
-      `https://vidlink.pro/movie/${movie.tmdbId || '1084199'}`;
+    // 1. Direct .torrent file download
+    if (streamToDownload.torrentFileUrl) {
+      const torrentA = document.createElement('a');
+      torrentA.href = streamToDownload.torrentFileUrl;
+      torrentA.download = `${safeTitle} (${year}) [${quality}].torrent`;
+      document.body.appendChild(torrentA);
+      torrentA.click();
+      document.body.removeChild(torrentA);
+    }
 
-    // 1. If it's a torrent magnet link
-    if (rawUrl.startsWith('magnet:?')) {
+    // 2. Direct video stream download
+    if (streamToDownload.directVideoDownloadUrl) {
+      const streamA = document.createElement('a');
+      streamA.href = streamToDownload.directVideoDownloadUrl;
+      streamA.download = cleanFileName;
+      document.body.appendChild(streamA);
+      streamA.click();
+      document.body.removeChild(streamA);
+    }
+
+    // 3. Magnet dispatch
+    const magnet = streamToDownload.magnetUrl || (streamToDownload.url?.startsWith('magnet:?') ? streamToDownload.url : null);
+    if (magnet) {
       try {
-        navigator.clipboard.writeText(rawUrl);
+        navigator.clipboard.writeText(magnet);
         setCopiedId(id);
       } catch {}
 
       const link = document.createElement('a');
-      link.href = rawUrl;
+      link.href = magnet;
+      document.body.appendChild(link);
       link.click();
-
-      setDownloadingId(null);
-      setDownloadSuccessId(id);
-      setStatusMessage('Magnet link dispatched to your torrent downloader!');
-      setTimeout(() => {
-        setDownloadSuccessId(null);
-        setStatusMessage(null);
-      }, 4000);
-      return;
+      document.body.removeChild(link);
+    } else if (!streamToDownload.torrentFileUrl && !streamToDownload.directVideoDownloadUrl) {
+      const rawUrl = streamToDownload.directDownloadUrl || streamToDownload.rawDirectUrl || streamToDownload.url;
+      if (rawUrl) {
+        const link = document.createElement('a');
+        link.href = rawUrl;
+        link.download = cleanFileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
-
-    // 2. Client-side redirect (No Proxy to save Server Bandwidth)
-    // Opening the raw URL in a new tab offloads bandwidth to the original host.
-    // We cannot force Content-Disposition on cross-origin requests without eating the bandwidth cost.
-    window.open(rawUrl, '_blank', 'noopener,noreferrer');
 
     setDownloadingId(null);
     setDownloadSuccessId(id);
-    setStatusMessage('Download started directly to your device!');
+    setStatusMessage('Download dispatched! Torrent & video attachments ready.');
     setTimeout(() => {
       setDownloadSuccessId(null);
       setStatusMessage(null);

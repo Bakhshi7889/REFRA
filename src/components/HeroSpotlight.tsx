@@ -4,6 +4,8 @@ import { motion, AnimatePresence, PanInfo } from 'motion/react';
 import { Movie } from '../types';
 import { getPosterUrl, getBackdropUrl, handleImageError, getLogoUrl } from '../utils/imageHelpers';
 import { isDataSaverActive } from '../services/themeStore';
+import { useImageColors } from '../utils/colorExtractor';
+import { triggerHaptic } from '../utils/haptics';
 
 interface HeroSpotlightProps {
   movies: Movie[];
@@ -26,7 +28,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const spotlightMovies = useMemo(() => {
     if (!movies || movies.length === 0) return [];
     const filtered = movies.filter((m) => m.spotlight || m.featured);
-    return (filtered.length > 0 ? filtered : movies).slice(0, 5);
+    return filtered.length > 0 ? filtered : movies;
   }, [movies]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeBackdropIdx, setActiveBackdropIdx] = useState(0);
@@ -58,6 +60,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const safeIndex = currentIndex < spotlightMovies.length ? currentIndex : 0;
   const activeMovie = spotlightMovies[safeIndex] || movies[0];
   const isSaved = watchlist.includes(activeMovie?.id);
+  const { colors } = useImageColors(activeMovie?.posterUrl || activeMovie?.backdropUrl, activeMovie?.title);
   const [logoFailed, setLogoFailed] = useState(false);
 
   useEffect(() => {
@@ -66,14 +69,14 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
 
   // Responsive images: portrait for mobile (2:3), landscape for PC/desktop (16:9)
   const portraitImages = useMemo(() => {
-    const targetSize = isDataSaver ? 'w185' : 'w500';
+    const targetSize = isDataSaver ? 'w185' : 'original';
     return (activeMovie?.posters && activeMovie.posters.length > 0)
       ? activeMovie.posters.map((p) => getPosterUrl(p, targetSize, activeMovie.backdropUrl))
       : [getPosterUrl(activeMovie?.posterUrl, targetSize, activeMovie?.backdropUrl)].filter(Boolean);
   }, [activeMovie, isDataSaver]);
 
   const landscapeImages = useMemo(() => {
-    const targetSize = isDataSaver ? 'w780' : 'w1280';
+    const targetSize = isDataSaver ? 'w780' : 'original';
     return [
       activeMovie?.backdropUrl,
       ...(activeMovie?.backdrops || []),
@@ -87,8 +90,8 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
   const currentImageUrl =
     activeImageList[activeBackdropIdx % (activeImageList.length || 1)] ||
     (isMobile
-      ? getPosterUrl(activeMovie?.posterUrl, isDataSaver ? 'w185' : 'w500', activeMovie?.backdropUrl)
-      : getBackdropUrl(activeMovie?.backdropUrl, isDataSaver ? 'w780' : 'w1280', activeMovie?.posterUrl));
+      ? getPosterUrl(activeMovie?.posterUrl, isDataSaver ? 'w185' : 'original', activeMovie?.backdropUrl)
+      : getBackdropUrl(activeMovie?.backdropUrl, isDataSaver ? 'w780' : 'original', activeMovie?.posterUrl));
 
   // 1. Artwork cycling:
   // Strictly disabled in Data Saver mode to save bandwidth.
@@ -226,6 +229,11 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
         {/* Cinematic Vignette Gradients */}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#0c0d10]/75 via-[#0c0d10]/20 to-transparent pointer-events-none z-15" />
         <div className="absolute inset-x-0 bottom-0 h-52 sm:h-60 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/80 via-45% to-transparent pointer-events-none z-15" />
+        {/* Poster-driven dynamic ambient glow */}
+        <div
+          className="absolute -bottom-10 left-1/4 w-1/2 h-36 rounded-full pointer-events-none filter blur-3xl opacity-35 transition-colors duration-700 z-15"
+          style={{ backgroundColor: colors.accent }}
+        />
 
         {/* Desktop Next and Back Navigation Buttons */}
         {spotlightMovies.length > 1 && (
@@ -307,14 +315,21 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
             </h2>
           )}
 
-          {/* Action Buttons directly on canvas */}
-          <div className="flex items-center justify-center sm:justify-start gap-2 pt-0.5">
+          {/* Action Buttons directly on canvas - Above the fold CTA */}
+          <div className="flex items-center justify-center sm:justify-start gap-2.5 pt-1">
             <motion.button
               whileTap={{ scale: 0.96 }}
               whileHover={{ scale: 1.02 }}
               type="button"
-              onClick={() => onPlay(activeMovie)}
-              className="flex-1 sm:flex-none sm:min-w-[140px] py-3 px-5 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-semibold text-xs flex items-center justify-center gap-2 shadow-xl transition-colors min-h-[44px] cursor-pointer"
+              onClick={() => {
+                triggerHaptic('medium');
+                onPlay(activeMovie);
+              }}
+              style={{
+                boxShadow: `0 12px 32px -6px ${colors.glow}`,
+              }}
+              id="hero-primary-cta"
+              className="flex-1 sm:flex-none sm:min-w-[170px] py-3.5 px-6 rounded-2xl bg-white hover:bg-neutral-100 text-neutral-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-2xl transition-all min-h-[48px] cursor-pointer"
             >
               <motion.div
                 whileHover={{ scale: 1.15, x: 1 }}
@@ -322,13 +337,16 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               >
                 <Play className="w-4 h-4 fill-neutral-950" />
               </motion.div>
-              <span>Play</span>
+              <span>Stream 4K Free</span>
             </motion.button>
 
             <motion.button
               whileTap={{ scale: 0.96 }}
               type="button"
-              onClick={() => onToggleWatchlist(activeMovie.id)}
+              onClick={() => {
+                triggerHaptic('success');
+                onToggleWatchlist(activeMovie.id);
+              }}
               className={`p-3 rounded-2xl flex items-center justify-center transition-colors duration-200 min-h-[44px] min-w-[44px] shadow-lg cursor-pointer ${
                 isSaved
                   ? 'bg-neutral-200 text-neutral-950'
@@ -351,6 +369,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
+                triggerHaptic('light');
                 onOpenDetails(activeMovie, e.currentTarget.getBoundingClientRect());
               }}
               className="p-3 rounded-2xl liquid-glass hover:bg-white/20 text-white flex items-center justify-center transition-colors min-h-[44px] min-w-[44px] shadow-lg cursor-pointer relative overflow-hidden"
@@ -366,7 +385,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
           </div>
 
           {/* Carousel Pagination Dots ("just show dots") */}
-          <div className="flex items-center justify-center gap-2 mt-1">
+          <div className="flex items-center justify-center gap-1.5 mt-1 max-w-full overflow-x-auto hide-scrollbar px-2 py-1">
             {spotlightMovies.map((m, idx) => (
               <button
                 key={m.id}
@@ -376,7 +395,7 @@ export const HeroSpotlight: React.FC<HeroSpotlightProps> = ({
                   setCurrentIndex(idx);
                   setActiveBackdropIdx(0);
                 }}
-                className="p-1 cursor-pointer"
+                className="p-1 cursor-pointer shrink-0"
                 aria-label={`Go to slide ${idx + 1}`}
               >
                 <div

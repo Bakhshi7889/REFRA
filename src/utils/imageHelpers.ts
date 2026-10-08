@@ -46,12 +46,17 @@ export function wrapWithProxyIfNeeded(url: string): string {
     return url;
   }
 
-  // Direct CDN and Refraction proxy fail on restricted/throttled ISPs.
+  // Direct CDN bypass if routing mode is set to direct
+  const routingMode = getImageRoutingMode();
+  if (routingMode === 'direct') {
+    return url;
+  }
+
   // Route via Cloudflare Edge Mirror (wsrv.nl) with webp output.
-  // When Data Saver is OFF: q=95 delivers full studio fidelity, film grain, and rich color depth.
+  // When Data Saver is OFF: q=100 delivers pristine studio fidelity, razor-sharp details, and uncompressed clarity.
   // When Data Saver is ON: q=55 compresses image bandwidth to save mobile data.
   const isDataSaver = isDataSaverActive();
-  const q = isDataSaver ? 55 : 95;
+  const q = isDataSaver ? 55 : 100;
   const cleanUrl = url.replace(/^[a-z]+:\/\//i, '');
   return `https://wsrv.nl/?url=${encodeURIComponent(cleanUrl)}&output=webp&q=${q}`;
 }
@@ -59,17 +64,19 @@ export function wrapWithProxyIfNeeded(url: string): string {
 /**
  * Resolves optimal poster size based on user resolution quality preference and data saver
  */
-function getEffectivePosterSize(requestedSize: PosterSize = 'w500'): PosterSize {
+function getEffectivePosterSize(requestedSize: PosterSize = 'w780'): PosterSize {
   const quality = getImageResolutionQuality();
-  if (quality === 'ultra') return 'w780';
-  if (quality === 'high') return 'w500';
-  if (quality === 'balanced') return 'w500';
-  if (quality === 'compact') return 'w185';
+  if (quality === 'compact') return 'w342';
   
-  // 'auto' default:
-  // When Data Saver is active -> 'w185'
-  // When Data Saver is OFF -> high-res requested size, defaulting to 'w500'
-  return isDataSaverActive() ? 'w185' : requestedSize;
+  // 'auto' / 'ultra' default:
+  // When Data Saver is active -> 'w185' or 'w342'
+  if (isDataSaverActive()) {
+    return requestedSize === 'w185' ? 'w185' : 'w342';
+  }
+  
+  // When on Wi-Fi (Data Saver OFF) -> in Wi-Fi every visual is 4K studio quality ('original' or 'w780')
+  if (requestedSize === 'original') return 'original';
+  return 'w780';
 }
 
 /**
@@ -77,15 +84,15 @@ function getEffectivePosterSize(requestedSize: PosterSize = 'w500'): PosterSize 
  */
 function getEffectiveBackdropSize(requestedSize: BackdropSize = 'w1280'): BackdropSize {
   const quality = getImageResolutionQuality();
-  if (quality === 'ultra') return 'original';
-  if (quality === 'high') return 'w1280';
-  if (quality === 'balanced') return 'w1280';
-  if (quality === 'compact') return 'w300';
+  if (quality === 'compact') return 'w780';
   
-  // 'auto' default:
-  // When Data Saver is active -> 'w300'
-  // When Data Saver is OFF -> full HD 'w1280' or requested size
-  return isDataSaverActive() ? 'w300' : requestedSize;
+  // When Data Saver is active -> 'w300' or 'w780'
+  if (isDataSaverActive()) {
+    return requestedSize === 'w300' ? 'w300' : 'w780';
+  }
+  
+  // When on Wi-Fi (Data Saver OFF) -> in Wi-Fi every visual is true 4K UHD 'original'
+  return 'original';
 }
 
 /**
@@ -95,7 +102,7 @@ export function toWebpUrl(
   urlOrPath: string | null | undefined,
   width?: number,
   quality?: number,
-  type: 'poster' | 'backdrop' = 'poster'
+  type: 'poster' | 'backdrop' | 'profile' | 'logo' = 'poster'
 ): string {
   if (!urlOrPath) return type === 'backdrop' ? FALLBACK_BACKDROP : FALLBACK_POSTER;
 
@@ -116,17 +123,62 @@ export function toWebpUrl(
   // If TMDB relative path or full TMDB URL
   if (urlOrPath.startsWith('/') || urlOrPath.includes('image.tmdb.org/t/p/')) {
     let cleanPath = urlOrPath;
+    let detectedType = type;
+
+    // Auto-detect profile or logo if not explicitly set
+    if (detectedType === 'poster') {
+      if (cleanPath.includes('/h632/') || cleanPath.includes('/w45/')) {
+        detectedType = 'profile';
+      } else if (cleanPath.includes('/w92/') || cleanPath.includes('/w154/')) {
+        detectedType = 'logo';
+      }
+    }
+
     if (cleanPath.includes('image.tmdb.org/t/p/')) {
-      cleanPath = cleanPath.replace(/^https?:\/\/image\.tmdb\.org\/t\/p\/(?:original|w\d+)/, '');
+      cleanPath = cleanPath.replace(/^https?:\/\/image\.tmdb\.org\/t\/p\/(?:original|w\d+|h\d+)/, '');
     }
     if (!cleanPath.startsWith('/')) cleanPath = `/${cleanPath}`;
 
     let tmdbSize: string;
-    if (type === 'backdrop') {
-      const preferred = (width && width <= 400) ? 'w300' : (width && width <= 900) ? 'w780' : 'w1280';
+    if (detectedType === 'backdrop') {
+      const preferred = isDataSaver
+        ? ((width && width <= 400) ? 'w300' : 'w780')
+        : ((width && width <= 400) ? 'w780' : 'w1280');
       tmdbSize = getEffectiveBackdropSize(preferred as BackdropSize);
+    } else if (detectedType === 'profile') {
+      // TMDB profiles only support w45, w185, h632, original
+      if (isDataSaver) {
+        tmdbSize = width && width <= 60 ? 'w45' : 'w185';
+      } else {
+        const resQuality = getImageResolutionQuality();
+        if (resQuality === 'ultra') {
+          tmdbSize = 'original';
+        } else if (width && width <= 80) {
+          tmdbSize = 'w185';
+        } else {
+          tmdbSize = 'h632';
+        }
+      }
+    } else if (detectedType === 'logo') {
+      // TMDB logos support w45, w92, w154, w185, w300, w500, original
+      if (isDataSaver) {
+        tmdbSize = width && width <= 60 ? 'w92' : 'w154';
+      } else {
+        const resQuality = getImageResolutionQuality();
+        if (resQuality === 'ultra') {
+          tmdbSize = 'original';
+        } else if (width && width <= 100) {
+          tmdbSize = 'w185';
+        } else if (width && width <= 300) {
+          tmdbSize = 'w300';
+        } else {
+          tmdbSize = 'w500';
+        }
+      }
     } else {
-      const preferred = (width && width <= 200) ? 'w185' : (width && width <= 400) ? 'w342' : 'w500';
+      const preferred = isDataSaver
+        ? ((width && width <= 200) ? 'w185' : (width && width <= 400) ? 'w342' : 'w500')
+        : ((width && width <= 200) ? 'w342' : (width && width <= 500) ? 'w500' : 'w780');
       tmdbSize = getEffectivePosterSize(preferred as PosterSize);
     }
 
@@ -136,12 +188,20 @@ export function toWebpUrl(
 
   // If Unsplash image
   if (urlOrPath.includes('images.unsplash.com')) {
-    const targetW = width || (type === 'backdrop' ? 960 : 400);
-    const targetQ = quality || (isDataSaver ? 55 : 75);
+    const targetW = width || (type === 'backdrop' ? 1280 : 800);
+    const targetQ = quality || (isDataSaver ? 55 : 95);
     return urlOrPath.replace(/w=\d+/, `w=${targetW}`).replace(/q=\d+/, `q=${targetQ}`);
   }
 
   return urlOrPath;
+}
+
+/**
+ * Resolves a high-quality actor profile portrait URL from TMDB
+ */
+export function getProfileUrl(urlOrPath: string | null | undefined, width = 185): string | null {
+  if (!urlOrPath) return null;
+  return toWebpUrl(urlOrPath, width, undefined, 'profile');
 }
 
 /**
@@ -261,7 +321,7 @@ export function handleImageError(
  */
 export function getPosterUrl(
   pathOrUrl: string | null | undefined,
-  size: PosterSize = 'w500',
+  size: PosterSize = 'w780',
   fallbackPathOrUrl?: string | null
 ): string {
   const target = pathOrUrl || fallbackPathOrUrl;
@@ -287,6 +347,13 @@ export function getPosterUrl(
 
   // If TMDB full URL
   if (target.includes('image.tmdb.org/t/p/')) {
+    // If already high-quality 4K/original or w780, preserve it (don't recache in low quality)
+    if (target.includes('/t/p/original/')) {
+      return wrapWithProxyIfNeeded(target);
+    }
+    if (target.includes('/t/p/w780/') && (!isDataSaverActive() || effectiveSize !== 'original')) {
+      return wrapWithProxyIfNeeded(target);
+    }
     const cdnUrl = target.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${effectiveSize}/`);
     return wrapWithProxyIfNeeded(cdnUrl);
   }
@@ -294,8 +361,10 @@ export function getPosterUrl(
   // If Unsplash image
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
-    const width = effectiveSize === 'w185' ? 240 : effectiveSize === 'w342' ? 480 : 800;
-    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=90');
+    const width = isDataSaver
+      ? (effectiveSize === 'w185' ? 240 : 480)
+      : (effectiveSize === 'original' ? 1600 : 1200);
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=95');
     return wrapWithProxyIfNeeded(unsplashUrl);
   }
 
@@ -334,6 +403,13 @@ export function getBackdropUrl(
 
   // If TMDB full URL
   if (target.includes('image.tmdb.org/t/p/')) {
+    // If already high-quality 4K/original or w1280, preserve it (don't recache in low quality)
+    if (target.includes('/t/p/original/')) {
+      return wrapWithProxyIfNeeded(target);
+    }
+    if (target.includes('/t/p/w1280/') && (!isDataSaverActive() || effectiveSize !== 'original')) {
+      return wrapWithProxyIfNeeded(target);
+    }
     const cdnUrl = target.replace(/\/t\/p\/(?:original|w\d+)\//, `/t/p/${effectiveSize}/`);
     return wrapWithProxyIfNeeded(cdnUrl);
   }
@@ -341,13 +417,63 @@ export function getBackdropUrl(
   // If Unsplash image
   if (target.includes('images.unsplash.com')) {
     const isDataSaver = isDataSaverActive();
-    const width = effectiveSize === 'w300' ? 480 : effectiveSize === 'w780' ? 1280 : 1920;
-    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=90');
+    const width = isDataSaver ? 480 : (effectiveSize === 'original' ? 2400 : 1920);
+    const unsplashUrl = target.replace(/w=\d+/, `w=${width}`).replace(/q=\d+/, isDataSaver ? 'q=55' : 'q=95');
     return wrapWithProxyIfNeeded(unsplashUrl);
   }
 
   return wrapWithProxyIfNeeded(target);
 }
+
+/**
+ * Global in-memory registry of fully decoded and rendered image URLs.
+ * Ensures image thumbnails on homepage and carousels stay loaded during fast scrolling,
+ * eliminating blank frames, skeleton shimmer re-flashes, and re-decode latency.
+ */
+export const loadedImageUrlsSet = new Set<string>();
+
+export function isImageLoaded(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return loadedImageUrlsSet.has(url);
+}
+
+export function markImageLoaded(url: string | null | undefined): void {
+  if (!url) return;
+  loadedImageUrlsSet.add(url);
+}
+
+/**
+ * Pre-warms movie poster thumbnails into browser memory and the cache.
+ * Executes on requestIdleCallback / background microtask so main scroll thread remains 120fps fluid.
+ */
+export function preloadMovieThumbnails(
+  movies: Array<{ posterUrl?: string | null; backdropUrl?: string | null } | undefined | null>
+): void {
+  if (typeof window === 'undefined' || !movies || movies.length === 0) return;
+
+  const runPreload = () => {
+    for (const movie of movies) {
+      if (!movie) continue;
+      const url = getPosterUrl(movie.posterUrl, 'w780', movie.backdropUrl);
+      if (url && !url.startsWith('data:') && !loadedImageUrlsSet.has(url)) {
+        const img = new Image();
+        img.referrerPolicy = 'no-referrer';
+        img.decoding = 'async';
+        img.onload = () => {
+          loadedImageUrlsSet.add(url);
+        };
+        img.src = url;
+      }
+    }
+  };
+
+  if ('requestIdleCallback' in window) {
+    (window as any).requestIdleCallback(runPreload, { timeout: 1500 });
+  } else {
+    setTimeout(runPreload, 60);
+  }
+}
+
 
 
 

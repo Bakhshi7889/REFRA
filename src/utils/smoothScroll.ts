@@ -1,8 +1,3 @@
-import Lenis from 'lenis';
-
-let lenisInstance: Lenis | null = null;
-let rafId: number | null = null;
-
 type ScrollProgressCallback = (progress: number, scrollY: number) => void;
 const scrollListeners = new Set<ScrollProgressCallback>();
 
@@ -29,125 +24,45 @@ export function subscribeScrollProgress(cb: ScrollProgressCallback): () => void 
 }
 
 /**
- * Initializes fluid, inertial smooth scrolling across the entire application (PC and mobile).
- * Automatically respects prefers-reduced-motion.
+ * Native smooth scrolling helper across PC and mobile.
  */
 export function initSmoothScroll(): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  if (prefersReducedMotion) {
-    const onNativeFallback = () => {
-      const doc = document.documentElement;
-      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
-      const maxScroll = Math.max(1, scrollH - window.innerHeight);
-      const currentScroll = window.scrollY || doc.scrollTop || 0;
-      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
-    };
-    window.addEventListener('scroll', onNativeFallback, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onNativeFallback);
-    };
-  }
-
-  if (lenisInstance) {
-    try {
-      lenisInstance.destroy();
-    } catch {}
-    lenisInstance = null;
-  }
-
-  const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-
-  if (isTouch) {
-    // Mobile touch devices: use 100% native hardware-composited scrolling.
-    // Completely eliminates touch latency, micro-stutter, and touch event fighting.
-    const onTouchScroll = () => {
-      const doc = document.documentElement;
-      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
-      const maxScroll = Math.max(1, scrollH - window.innerHeight);
-      const currentScroll = window.scrollY || doc.scrollTop || 0;
-      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
-    };
-    window.addEventListener('scroll', onTouchScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onTouchScroll);
-    };
-  }
-
-  const lenis = new Lenis({
-    duration: 0.85,
-    easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-    orientation: 'vertical',
-    gestureOrientation: 'vertical',
-    smoothWheel: true,
-    wheelMultiplier: 0.95,
-    syncTouch: false,
-    syncTouchLerp: 0.075,
-    touchMultiplier: 1.0,
-    infinite: false,
-  });
-
-  lenisInstance = lenis;
-
-  lenis.on('scroll', (e: any) => {
-    const progress = typeof e.progress === 'number' ? e.progress : (e.scroll / (e.limit || 1));
-    emitScroll(Math.min(1, Math.max(0, progress)), e.scroll);
-  });
-
   const onNativeScroll = () => {
-    if (!lenisInstance) {
-      const doc = document.documentElement;
-      const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
-      const maxScroll = Math.max(1, scrollH - window.innerHeight);
-      const currentScroll = window.scrollY || doc.scrollTop || 0;
-      emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
-    }
+    const doc = document.documentElement;
+    const scrollH = Math.max(doc.scrollHeight, document.body.scrollHeight);
+    const maxScroll = Math.max(1, scrollH - window.innerHeight);
+    const currentScroll = window.scrollY || doc.scrollTop || 0;
+    emitScroll(Math.min(1, Math.max(0, currentScroll / maxScroll)), currentScroll);
   };
+  
   window.addEventListener('scroll', onNativeScroll, { passive: true });
-
-  function raf(time: number) {
-    lenis.raf(time);
-    rafId = requestAnimationFrame(raf);
-  }
-  rafId = requestAnimationFrame(raf);
-
   return () => {
     window.removeEventListener('scroll', onNativeScroll);
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-    if (lenisInstance) {
-      lenisInstance.destroy();
-      lenisInstance = null;
-    }
   };
 }
 
-export function pauseSmoothScroll() {
-  lenisInstance?.stop();
-}
+export function pauseSmoothScroll() {}
 
-export function resumeSmoothScroll() {
-  lenisInstance?.start();
-}
+export function resumeSmoothScroll() {}
 
 export function scrollToTop() {
-  if (lenisInstance) {
-    lenisInstance.scrollTo(0, { duration: 0.85, immediate: false });
-  } else {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  if (typeof window === 'undefined') return;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 export function scrollToElement(target: string | HTMLElement, offset = 0) {
-  if (lenisInstance) {
-    lenisInstance.scrollTo(target, { offset, duration: 0.95 });
-  } else if (typeof target === 'string') {
+  if (typeof window === 'undefined') return;
+  if (typeof target === 'string') {
     const el = document.querySelector(target);
-    el?.scrollIntoView({ behavior: 'smooth' });
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY + offset;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }
   } else {
-    target?.scrollIntoView?.({ behavior: 'smooth' });
+    const top = target.getBoundingClientRect().top + window.scrollY + offset;
+    window.scrollTo({ top, behavior: 'smooth' });
   }
 }
+

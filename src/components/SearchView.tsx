@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search,
   Loader2,
@@ -16,6 +16,7 @@ import {
   Sparkles,
   Globe,
   ArrowRight,
+  Clock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Movie } from '../types';
@@ -23,6 +24,27 @@ import { getPosterUrl, toWebpUrl, handleImageError } from '../utils/imageHelpers
 import { fetchWatchProviders, discoverMoviesWithFilters, WatchProvider } from '../services/movieApi';
 import { getCachedWatchProviders } from '../services/movieCache';
 import { getUserRegion } from '../services/regionStore';
+import { getInCodeWatchProviderLogo } from '../data/watchProvidersData';
+import { triggerHaptic } from '../utils/haptics';
+
+const RECENT_SEARCHES_STORAGE_KEY = 'refra_recent_searches';
+const MAX_RECENT_SEARCHES = 10;
+
+function loadRecentSearches(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0
+      );
+    }
+  } catch {
+    // Ignore localStorage errors in restricted browsing modes
+  }
+  return [];
+}
 
 const GENRES = [
   { id: 28, name: 'Action' },
@@ -60,18 +82,27 @@ const BEFORE_PRESETS = [
 const LANGUAGES = [
   { code: 'all', name: 'All Languages' },
   { code: 'en', name: 'English' },
-  { code: 'hi', name: 'Hindi (Bollywood)' },
-  { code: 'ta', name: 'Tamil (Kollywood)' },
-  { code: 'te', name: 'Telugu (Tollywood)' },
-  { code: 'ml', name: 'Malayalam (Mollywood)' },
-  { code: 'kn', name: 'Kannada (Sandalwood)' },
-  { code: 'bn', name: 'Bengali' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
+  { code: 'ru', name: 'Russian (Русский)' },
+  { code: 'es', name: 'Spanish (Español)' },
+  { code: 'fr', name: 'French (Français)' },
+  { code: 'de', name: 'German (Deutsch)' },
+  { code: 'ja', name: 'Japanese (日本語)' },
+  { code: 'ko', name: 'Korean (한국어)' },
+  { code: 'it', name: 'Italian (Italiano)' },
+  { code: 'zh', name: 'Chinese (中文)' },
+  { code: 'tr', name: 'Turkish (Türkçe)' },
+  { code: 'pt', name: 'Portuguese (Português)' },
+  { code: 'ar', name: 'Arabic (العربية)' },
+  { code: 'hi', name: 'Hindi (हिन्दी)' },
+  { code: 'ta', name: 'Tamil (தமிழ்)' },
+  { code: 'te', name: 'Telugu (తెలుగు)' },
+  { code: 'ml', name: 'Malayalam (മലയാളം)' },
 ];
+
+function getLanguageBadge(code?: string): string | null {
+  if (!code || code === 'en' || code === 'xx') return null;
+  return code.toUpperCase();
+}
 
 const RATINGS = [
   { value: 0, label: 'Any Score' },
@@ -104,6 +135,7 @@ export function SearchView({
   onThemeColorChange,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState(initialQuery);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => loadRecentSearches());
   const [searchResults, setSearchResults] = useState<Movie[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [providers, setProviders] = useState<WatchProvider[]>(() => {
@@ -112,6 +144,50 @@ export function SearchView({
     return cached && cached.length > 0 ? cached.slice(0, 16) : [];
   });
   const [selectedProvider, setSelectedProvider] = useState<WatchProvider | null>(null);
+
+  // Sync initialQuery when passed or updated from external navigation
+  useEffect(() => {
+    if (initialQuery !== undefined && initialQuery !== searchQuery) {
+      setSearchQuery(initialQuery);
+    }
+  }, [initialQuery]);
+
+  // Recent Searches management (persisted in localStorage)
+  const saveRecentSearch = useCallback((term: string) => {
+    const clean = term.trim();
+    if (!clean || clean.length < 2) return;
+    setRecentSearches((prev) => {
+      const filtered = prev.filter((item) => item.toLowerCase() !== clean.toLowerCase());
+      const updated = [clean, ...filtered].slice(0, MAX_RECENT_SEARCHES);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Storage unavailable / quota exceeded
+      }
+      return updated;
+    });
+  }, []);
+
+  const removeRecentSearch = useCallback((termToRemove: string) => {
+    setRecentSearches((prev) => {
+      const updated = prev.filter((item) => item !== termToRemove);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // Storage unavailable
+      }
+      return updated;
+    });
+  }, []);
+
+  const clearAllRecentSearches = useCallback(() => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_STORAGE_KEY);
+    } catch {
+      // Storage unavailable
+    }
+  }, []);
 
   // Filter states
   const [mediaType, setMediaType] = useState<'movie' | 'tv' | 'all'>('all');
@@ -277,6 +353,10 @@ export function SearchView({
         if (isMounted) {
           setSearchResults(results);
           setIsSearching(false);
+          const trimmed = searchQuery.trim();
+          if (trimmed.length >= 2 && results.length > 0) {
+            saveRecentSearch(trimmed);
+          }
         }
       } catch {
         if (isMounted) setIsSearching(false);
@@ -300,6 +380,7 @@ export function SearchView({
     minRating,
     selectedLanguage,
     selectedSort,
+    saveRecentSearch,
   ]);
 
   // Handle provider selection
@@ -358,6 +439,15 @@ export function SearchView({
     }
   };
 
+  // Filter recent searches matching current query for instant autocomplete
+  const matchingRecentSearches = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return recentSearches
+      .filter((term) => term.toLowerCase().includes(q) && term.toLowerCase() !== q)
+      .slice(0, 4);
+  }, [searchQuery, recentSearches]);
+
   return (
     <div className="px-4 py-3 space-y-5">
       {/* Search Input Bar */}
@@ -374,6 +464,15 @@ export function SearchView({
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const trimmed = searchQuery.trim();
+                if (trimmed.length >= 2) {
+                  saveRecentSearch(trimmed);
+                }
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
             className="w-full bg-transparent text-sm text-white placeholder-neutral-500 focus:outline-none"
           />
           {searchQuery && (
@@ -401,6 +500,54 @@ export function SearchView({
               </span>
             )}
           </button>
+        </div>
+
+        {/* Quick Autocomplete Chips from Recent Searches */}
+        {matchingRecentSearches.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar px-1 py-0.5 text-xs text-neutral-400">
+            <span className="text-[11px] text-neutral-400 flex items-center gap-1 shrink-0 font-medium">
+              <Clock className="w-3 h-3 text-neutral-400" />
+              History:
+            </span>
+            {matchingRecentSearches.map((term) => (
+              <button
+                key={term}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSearchQuery(term);
+                  saveRecentSearch(term);
+                }}
+                className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/10 hover:bg-white/15 text-neutral-200 hover:text-white transition-colors border border-white/10 flex items-center gap-1 cursor-pointer active:scale-95 shrink-0"
+              >
+                <span>{term}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Quick Language Filter Pills: All, English, Hindi, then rest */}
+        <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar -mx-1 px-1 py-0.5 select-none" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {LANGUAGES.map((l) => {
+            const isSelected = selectedLanguage === l.code;
+            return (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSelectedLanguage(l.code);
+                }}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all duration-150 cursor-pointer active:scale-95 ${
+                  isSelected
+                    ? 'bg-white text-black font-bold shadow-md shadow-black/30'
+                    : 'bg-white/5 text-neutral-300 hover:bg-white/10 hover:text-white border border-white/5'
+                }`}
+              >
+                {l.name}
+              </button>
+            );
+          })}
         </div>
 
         {/* Active Filter Badges Bar */}
@@ -791,27 +938,26 @@ export function SearchView({
         </AnimatePresence>
       </div>
 
-      {/* Media Type Tabs: Both, Movies, Series */}
-      {/* Target of CSS selector 1: div > div > button:nth-of-type(3) */}
+      {/* Media Type Tabs & Quick Regional Filter */}
       <div className="flex items-center justify-center">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 p-1 bg-white/5 rounded-full border border-white/10 backdrop-blur-md shadow-inner">
           <button
             onClick={() => setMediaType('all')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-colors duration-150 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150 ${
               mediaType === 'all'
                 ? 'bg-white text-black font-semibold shadow-md'
-                : 'bg-white/10 hover:bg-white/15 text-neutral-300 hover:text-white backdrop-blur-md'
+                : 'text-neutral-300 hover:text-white hover:bg-white/10'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
-            Both
+            All
           </button>
           <button
             onClick={() => setMediaType('movie')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-colors duration-150 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150 ${
               mediaType === 'movie'
                 ? 'bg-white text-black font-semibold shadow-md'
-                : 'bg-white/10 hover:bg-white/15 text-neutral-300 hover:text-white backdrop-blur-md'
+                : 'text-neutral-300 hover:text-white hover:bg-white/10'
             }`}
           >
             <Film className="w-3.5 h-3.5" />
@@ -819,10 +965,10 @@ export function SearchView({
           </button>
           <button
             onClick={() => setMediaType('tv')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-colors duration-150 ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150 ${
               mediaType === 'tv'
                 ? 'bg-white text-black font-semibold shadow-md'
-                : 'bg-white/10 hover:bg-white/15 text-neutral-300 hover:text-white backdrop-blur-md'
+                : 'text-neutral-300 hover:text-white hover:bg-white/10'
             }`}
           >
             <Tv className="w-3.5 h-3.5" />
@@ -849,10 +995,18 @@ export function SearchView({
                 title={p.provider_name}
               >
                 <img
-                  src={toWebpUrl(p.logo_path, 150)}
+                  src={getInCodeWatchProviderLogo(p) || toWebpUrl(p.logo_path, 150)}
                   alt={p.provider_name}
+                  loading="eager"
+                  decoding="sync"
                   onError={(e) => {
-                    (e.currentTarget.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                    const img = e.currentTarget;
+                    if (img.dataset.retried !== 'true' && p.logo_path) {
+                      img.dataset.retried = 'true';
+                      img.src = toWebpUrl(p.logo_path, 150);
+                    } else {
+                      (img.parentElement as HTMLElement)?.style.setProperty('display', 'none');
+                    }
                   }}
                   className="w-full h-full object-cover rounded-2xl"
                 />
@@ -869,6 +1023,71 @@ export function SearchView({
         </div>
       )}
 
+      {/* Recent Searches when search is empty and history exists */}
+      {!searchQuery && !selectedProvider && activeFilterCount === 0 && recentSearches.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 drop-shadow-sm">
+              <Clock className="w-3.5 h-3.5 text-neutral-400" />
+              Recent Searches
+            </h4>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                clearAllRecentSearches();
+              }}
+              className="text-[11px] font-medium text-neutral-400 hover:text-white transition-colors flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 cursor-pointer border border-white/5"
+              title="Clear all recent searches"
+            >
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <AnimatePresence mode="popLayout">
+              {recentSearches.map((term) => (
+                <motion.div
+                  key={term}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.15 }}
+                  className="group inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full text-xs font-medium bg-[#14161f]/90 text-neutral-200 hover:text-white hover:bg-white/10 transition-colors border border-white/10 shadow-sm"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSearchQuery(term);
+                      saveRecentSearch(term);
+                    }}
+                    className="flex items-center gap-1.5 cursor-pointer active:scale-95 transition-transform text-left"
+                    title={`Search for "${term}"`}
+                  >
+                    <Clock className="w-3 h-3 text-neutral-400 group-hover:text-neutral-300 shrink-0" />
+                    <span>{term}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      removeRecentSearch(term);
+                    }}
+                    className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/15 transition-colors cursor-pointer ml-0.5"
+                    title={`Remove "${term}" from history`}
+                    aria-label={`Remove "${term}"`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+
       {/* Popular Searches when completely empty */}
       {!searchQuery && !selectedProvider && activeFilterCount === 0 && (
         <div className="space-y-3 pt-3">
@@ -876,18 +1095,31 @@ export function SearchView({
             Popular Searches
           </h4>
           <div className="flex flex-wrap justify-center gap-2">
-            {['Dune', 'Oppenheimer', 'Shōgun', 'Interstellar', 'The Batman', 'Sci-Fi'].map(
-              (term) => (
-                <button
-                  key={term}
-                  type="button"
-                  onClick={() => setSearchQuery(term)}
-                  className="px-4 py-2 rounded-full text-xs font-medium bg-black/45 backdrop-blur-md text-neutral-200 hover:bg-white/20 hover:text-white transition-colors duration-150 border border-white/15 shadow-sm active:scale-95"
-                >
-                  {term}
-                </button>
-              )
-            )}
+            {[
+              'Severance',
+              'Shōgun',
+              'Dune',
+              'Dark',
+              'Lupin',
+              'Squid Game',
+              'Interstellar',
+              'The Bear',
+              'Chernobyl',
+              'Succession',
+            ].map((term) => (
+              <button
+                key={term}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSearchQuery(term);
+                  saveRecentSearch(term);
+                }}
+                className="px-4 py-2 rounded-full text-xs font-medium bg-black/45 backdrop-blur-md text-neutral-200 hover:bg-white/20 hover:text-white transition-colors duration-150 border border-white/15 shadow-sm active:scale-95"
+              >
+                {term}
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -932,40 +1164,48 @@ export function SearchView({
               <AnimatePresence>
                 {searchResults.map((movie, index) => {
                   const isSaved = watchlist.includes(movie.id);
+                  const langBadge = getLanguageBadge(movie.originalLanguage);
+
                   return (
                     <motion.div
                       key={movie.id}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.2) }}
+                      transition={{ duration: 0.25, delay: Math.min(index * 0.03, 0.24) }}
+                      whileHover={{ scale: 1.03, y: -4 }}
                       whileTap={{ scale: 0.96 }}
-                      onClick={(e) => onMovieClick(movie, e.currentTarget.getBoundingClientRect())}
+                      onClick={(e) => {
+                        triggerHaptic('light');
+                        onMovieClick(movie, e.currentTarget.getBoundingClientRect());
+                      }}
                       style={{ willChange: 'transform' }}
-                      className="media-card-item aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer"
+                      className="media-card-item aspect-[2/3] rounded-2xl overflow-hidden bg-[#14161e] relative group cursor-pointer shadow-lg gpu-layer hover:shadow-2xl hover:shadow-black/60 transition-shadow duration-300"
                     >
+                      {/* Skeleton Loading Shimmer Placeholder */}
+                      <div className="absolute inset-0 bg-neutral-800/50 animate-pulse pointer-events-none" />
+
                       <img
-                        src={getPosterUrl(movie.posterUrl, 'w500', movie.backdropUrl)}
+                        src={getPosterUrl(movie.posterUrl, 'w780', movie.backdropUrl)}
                         alt={movie.title}
                         referrerPolicy="no-referrer"
-                        loading="lazy"
-                        decoding="async"
                         onError={(e) => handleImageError(e, false)}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none relative z-0"
                       />
 
                       {/* Canvas gradient overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none" />
-                      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0c0d10] via-[#0c0d10]/40 to-transparent pointer-events-none z-1" />
+                      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[#0c0d10]/95 via-[#0c0d10]/60 to-transparent pointer-events-none z-1" />
 
                       {/* Top bookmark button */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          triggerHaptic('success');
                           onToggleWatchlist(movie.id);
                         }}
-                        className="absolute top-2 right-2 p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                        className="absolute top-2 right-2 p-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 transition-colors z-10 cursor-pointer"
                         aria-label={isSaved ? 'Remove from watchlist' : 'Add to watchlist'}
                       >
                         {isSaved ? (
@@ -975,18 +1215,30 @@ export function SearchView({
                         )}
                       </button>
 
-                      {/* Media type badge */}
-                      {movie.mediaType && (
-                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-md border border-white/10 text-[9px] font-semibold uppercase tracking-wider text-neutral-300">
-                          {movie.mediaType === 'tv' ? 'Series' : movie.mediaType === 'anime' ? 'Anime' : 'Movie'}
-                        </div>
-                      )}
+                      {/* Media type and Language badges */}
+                      <div className="absolute top-2 left-2 flex flex-wrap items-center gap-1 z-10 max-w-[75%]">
+                        {movie.mediaType && (
+                          <div className="px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md border border-white/15 text-[9px] font-semibold uppercase tracking-wider text-neutral-200 shadow-sm">
+                            {movie.mediaType === 'tv' ? 'Series' : movie.mediaType === 'anime' ? 'Anime' : 'Movie'}
+                          </div>
+                        )}
+                        {langBadge && (
+                          <div className="px-1.5 py-0.5 rounded-md bg-white/10 backdrop-blur-md text-[8.5px] font-bold tracking-wider uppercase text-neutral-200 shadow-sm border border-white/15">
+                            {langBadge}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Title & Metadata */}
-                      <div className="absolute inset-x-0 bottom-0 p-3 z-10 flex flex-col gap-1 pointer-events-none">
-                        <h4 className="text-xs font-semibold text-white line-clamp-2 leading-tight drop-shadow-sm">
+                      <div className="absolute inset-x-0 bottom-0 p-3 z-10 flex flex-col gap-0.5 pointer-events-none">
+                        <h4 className="text-xs font-semibold text-white line-clamp-1 leading-tight drop-shadow-sm">
                           {movie.title}
                         </h4>
+                        {movie.originalTitle && movie.originalTitle.toLowerCase() !== movie.title.toLowerCase() && (
+                          <p className="text-[10px] text-neutral-400 font-normal italic truncate drop-shadow-sm">
+                            {movie.originalTitle}
+                          </p>
+                        )}
                         <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mt-0.5">
                           <span className="flex items-center gap-1 font-medium text-white">
                             <Star className="w-3 h-3 fill-white text-white" />

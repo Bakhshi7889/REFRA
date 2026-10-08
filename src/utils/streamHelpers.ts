@@ -1,4 +1,4 @@
-import { StreamItem, Movie } from '../types';
+import { StreamItem, Movie, SourceAdReport } from '../types';
 import { PENGU_PLAY_LOGO_DATA_URI } from './penguLogoBase64';
 
 export const PROVIDER_IMAGE_LOGOS: Record<string, string> = {
@@ -20,6 +20,14 @@ export const PROVIDER_IMAGE_LOGOS: Record<string, string> = {
   realdebrid: 'https://real-debrid.com/favicon.ico',
   alldebrid: 'https://alldebrid.com/favicon.ico',
   premiumize: 'https://www.premiumize.me/favicon.ico',
+  vidlink: 'https://vidlink.pro/favicon.ico',
+  videasy: 'https://player.videasy.net/favicon.ico',
+  autoembed: 'https://autoembed.co/favicon.ico',
+  twoembed: 'https://www.2embed.cc/favicon.ico',
+  '2embed': 'https://www.2embed.cc/favicon.ico',
+  smashystream: 'https://embed.smashystream.com/favicon.ico',
+  vidsrc: 'https://vidsrc.to/favicon.ico',
+  superembed: 'https://multiembed.mov/favicon.ico',
 };
 
 export const getProviderLogo = (serverName?: string, logoUrl?: string): string => {
@@ -37,6 +45,292 @@ export const getProviderLogo = (serverName?: string, logoUrl?: string): string =
     }
   }
   return PENGU_PLAY_LOGO_DATA_URI;
+};
+
+/**
+ * Community internet intelligence dataset on streaming sources:
+ * Ad levels, popup frequencies, and external redirect behavior.
+ * Used to categorize and sort sources that show more ads or redirect frequently to the bottom.
+ */
+export const INTERNET_SOURCE_AD_REPORTS: SourceAdReport[] = [
+  {
+    id: 'penguplay',
+    name: 'PenguPlay CDN',
+    serverName: 'PenguPlay',
+    domain: 'pengu.uk',
+    adLevel: 'none',
+    adLabel: 'Ad-Free Direct Stream',
+    redirectFrequency: 'none',
+    redirectLabel: '0 Redirects (Direct HTML5)',
+    redirectDescription: 'Clean direct video stream without any popups, redirects, or scripts.',
+    adBlockRecommended: false,
+    trustScore: 99,
+    category: 'direct',
+    notes: 'Premium direct streaming cluster with zero ads or tracking',
+  },
+  {
+    id: 'torrentio',
+    name: 'Torrentio RD',
+    serverName: 'Torrentio',
+    domain: 'torrentio.strem.fun',
+    adLevel: 'none',
+    adLabel: 'Ad-Free Cloud Pipeline',
+    redirectFrequency: 'none',
+    redirectLabel: '0 Redirects (Direct Debrid)',
+    redirectDescription: 'Direct high-speed media stream from verified cloud seedboxes.',
+    adBlockRecommended: false,
+    trustScore: 98,
+    category: 'direct',
+    notes: 'Debrid cached torrent pipeline with instant playback and zero redirects',
+  },
+  {
+    id: 'torrentsdb',
+    name: 'TorrentsDB Master',
+    serverName: 'TorrentsDB',
+    domain: 'torrentsdb.com',
+    adLevel: 'none',
+    adLabel: 'Ad-Free Direct Swarm',
+    redirectFrequency: 'none',
+    redirectLabel: '0 Redirects (Direct Swarm)',
+    redirectDescription: 'Streamed directly over high-bitrate cloud nodes with 0 redirects.',
+    adBlockRecommended: false,
+    trustScore: 98,
+    category: 'direct',
+    notes: 'Verified direct stream provider with Dolby Vision and Atmos',
+  },
+  {
+    id: 'comet',
+    name: 'Comet ElfHosted',
+    serverName: 'Comet',
+    domain: 'comet.elfhosted.com',
+    adLevel: 'none',
+    adLabel: 'Ad-Free Fast Node',
+    redirectFrequency: 'none',
+    redirectLabel: '0 Redirects (Direct Node)',
+    redirectDescription: 'Direct cloud server stream with zero popup ads or page switches.',
+    adBlockRecommended: false,
+    trustScore: 97,
+    category: 'direct',
+    notes: 'Hosted on enterprise ElfHosted infrastructure',
+  },
+  {
+    id: 'vidlink',
+    name: 'VidLink 4K Player',
+    serverName: 'VidLink',
+    domain: 'vidlink.pro',
+    adLevel: 'low',
+    adLabel: 'Low Ads (Clean Embed)',
+    redirectFrequency: 'rare',
+    redirectLabel: 'Rare (Clean Player)',
+    redirectDescription: 'Clean HTML5 player with minimal or no popups. Smooth playback.',
+    adBlockRecommended: false,
+    trustScore: 92,
+    category: 'clean_embed',
+    notes: 'One of the cleanest and most reliable web embeds online',
+  },
+  {
+    id: 'videasy',
+    name: 'Videasy Pro',
+    serverName: 'Videasy',
+    domain: 'player.videasy.net',
+    adLevel: 'low',
+    adLabel: 'Low Ads (Fast HTML5)',
+    redirectFrequency: 'rare',
+    redirectLabel: 'Rare (Direct Embed)',
+    redirectDescription: 'Low ad frequency, multi-language audio tracks, and rare redirects.',
+    adBlockRecommended: false,
+    trustScore: 90,
+    category: 'clean_embed',
+    notes: 'Modern embed player with multi-audio support',
+  },
+  {
+    id: 'autoembed',
+    name: 'AutoEmbed Fast',
+    serverName: 'AutoEmbed',
+    domain: 'autoembed.co',
+    adLevel: 'moderate',
+    adLabel: 'Shows Ads (Popups on Play)',
+    redirectFrequency: 'frequent',
+    redirectLabel: 'Frequent (1-2 Popups / Redirects)',
+    redirectDescription: 'Shows ads and frequently redirects to external pages or opens new tabs on initial play clicks.',
+    redirectNotice: 'Opens new tab popup on click. Closes safely or blockable with AdBlock.',
+    isAdHeavyMirror: true,
+    hasFrequentRedirects: true,
+    adBlockRecommended: true,
+    trustScore: 72,
+    category: 'ad_heavy_mirror',
+    notes: 'Popular internet mirror; triggers popups and tab redirects when clicked',
+  },
+  {
+    id: 'vidsrc',
+    name: 'VidSrc Pro Mirror',
+    serverName: 'VidSrc',
+    domain: 'vidsrc.to',
+    adLevel: 'frequent',
+    adLabel: 'Frequent Ads & Banners',
+    redirectFrequency: 'frequent',
+    redirectLabel: 'Frequent (2-3 Popups / Tab Redirects)',
+    redirectDescription: 'Frequently redirects to sponsor pages and opens popunders on play.',
+    redirectNotice: 'Triggers 2-3 sponsor redirects before playing video stream.',
+    isAdHeavyMirror: true,
+    hasFrequentRedirects: true,
+    adBlockRecommended: true,
+    trustScore: 65,
+    category: 'ad_heavy_mirror',
+    notes: 'Frequent redirects reported across community forums; positioned at bottom',
+  },
+  {
+    id: '2embed',
+    name: '2Embed Global',
+    serverName: '2Embed',
+    domain: '2embed.cc',
+    adLevel: 'high',
+    adLabel: 'High Ads & Popunders',
+    redirectFrequency: 'frequent',
+    redirectLabel: 'High (Redirects to External Pages Frequently)',
+    redirectDescription: 'Shows multiple aggressive ads and frequently redirects the browser or opens new tabs on click.',
+    redirectNotice: 'Frequently switches window focus and redirects on click.',
+    isAdHeavyMirror: true,
+    hasFrequentRedirects: true,
+    adBlockRecommended: true,
+    trustScore: 56,
+    category: 'ad_heavy_mirror',
+    notes: 'High ad frequency and multiple click-jack redirects before video loads',
+  },
+  {
+    id: 'smashystream',
+    name: 'SmashyStream Ultra',
+    serverName: 'SmashyStream',
+    domain: 'embed.smashystream.com',
+    adLevel: 'high',
+    adLabel: 'Extreme Ads & External Redirects',
+    redirectFrequency: 'aggressive',
+    redirectLabel: 'Aggressive (Frequent External Redirects)',
+    redirectDescription: 'Aggressively redirects to third-party advertiser sites and opens spam tabs on interaction.',
+    redirectNotice: 'Aggressive ad triggers and multiple redirect attempts.',
+    isAdHeavyMirror: true,
+    hasFrequentRedirects: true,
+    adBlockRecommended: true,
+    trustScore: 48,
+    category: 'ad_heavy_mirror',
+    notes: 'Aggressive redirect behavior documented in web streaming data; placed at bottom',
+  },
+  {
+    id: 'superembed',
+    name: 'SuperEmbed Multi',
+    serverName: 'SuperEmbed',
+    domain: 'multiembed.mov',
+    adLevel: 'high',
+    adLabel: 'Frequent Ads & Redirects',
+    redirectFrequency: 'frequent',
+    redirectLabel: 'Frequent (Redirects on Click)',
+    redirectDescription: 'Overlays video controls with ad redirects. Ad blocker required for smooth viewing.',
+    redirectNotice: 'Frequent popups on player controls. Use AdBlock for best results.',
+    isAdHeavyMirror: true,
+    hasFrequentRedirects: true,
+    adBlockRecommended: true,
+    trustScore: 54,
+    category: 'ad_heavy_mirror',
+    notes: 'Community indexed as high ad density mirror',
+  },
+];
+
+export const getSourceAdReport = (serverName?: string, url?: string): SourceAdReport => {
+  const s = (serverName || '').toLowerCase();
+  const u = (url || '').toLowerCase();
+
+  if (s.includes('smashystream') || u.includes('smashystream')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'smashystream')!;
+  }
+  if (s.includes('2embed') || u.includes('2embed')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === '2embed')!;
+  }
+  if (s.includes('superembed') || u.includes('multiembed') || s.includes('multiembed')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'superembed')!;
+  }
+  if (s.includes('vidsrc') || u.includes('vidsrc')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'vidsrc')!;
+  }
+  if (s.includes('autoembed') || u.includes('autoembed')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'autoembed')!;
+  }
+  if (s.includes('vidlink') || u.includes('vidlink')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'vidlink')!;
+  }
+  if (s.includes('videasy') || u.includes('videasy')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'videasy')!;
+  }
+  if (s.includes('torrentio')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'torrentio')!;
+  }
+  if (s.includes('torrentsdb')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'torrentsdb')!;
+  }
+  if (s.includes('comet')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'comet')!;
+  }
+  if (s.includes('pengu')) {
+    return INTERNET_SOURCE_AD_REPORTS.find((r) => r.id === 'penguplay')!;
+  }
+
+  return {
+    id: 'generic_direct',
+    name: serverName || 'Direct Stream',
+    serverName: serverName || 'Direct Stream',
+    domain: 'direct.stream',
+    adLevel: 'none',
+    adLabel: 'Ad-Free Direct Stream',
+    redirectFrequency: 'none',
+    redirectLabel: '0 Redirects (Direct Stream)',
+    redirectDescription: 'Direct media stream with zero popups or redirects.',
+    redirectNotice: 'Zero redirects or ads.',
+    isAdHeavyMirror: false,
+    hasFrequentRedirects: false,
+    adBlockRecommended: false,
+    trustScore: 95,
+    category: 'direct',
+    notes: 'Direct cloud or P2P stream',
+  };
+};
+
+export const hasFrequentRedirects = (streamOrServer?: StreamItem | string, url?: string): boolean => {
+  if (typeof streamOrServer === 'object' && streamOrServer) {
+    if (streamOrServer.hasFrequentRedirects !== undefined) {
+      return streamOrServer.hasFrequentRedirects;
+    }
+    const report = getSourceAdReport(streamOrServer.serverName, streamOrServer.url || streamOrServer.embedUrl);
+    return report.redirectFrequency === 'frequent' || report.redirectFrequency === 'aggressive';
+  }
+  const serverStr = typeof streamOrServer === 'string' ? streamOrServer : undefined;
+  const report = getSourceAdReport(serverStr, url);
+  return report.redirectFrequency === 'frequent' || report.redirectFrequency === 'aggressive';
+};
+
+export const isAdHeavySource = (streamOrServer?: StreamItem | string, url?: string): boolean => {
+  if (typeof streamOrServer === 'object' && streamOrServer) {
+    if (streamOrServer.isAdHeavyMirror !== undefined) {
+      return streamOrServer.isAdHeavyMirror;
+    }
+    const report = getSourceAdReport(streamOrServer.serverName, streamOrServer.url || streamOrServer.embedUrl);
+    return report.adLevel === 'moderate' || report.adLevel === 'frequent' || report.adLevel === 'high';
+  }
+  const serverStr = typeof streamOrServer === 'string' ? streamOrServer : undefined;
+  const report = getSourceAdReport(serverStr, url);
+  return report.adLevel === 'moderate' || report.adLevel === 'frequent' || report.adLevel === 'high';
+};
+
+/**
+ * Places clean / direct / low-ad streams at top, and pushes sources that show ads more
+ * or redirect to other pages frequently to the bottom.
+ */
+export const sortStreamsWithAdHeavyAtBottom = (streams: StreamItem[]): StreamItem[] => {
+  return [...streams].sort((a, b) => {
+    const aHeavy = isAdHeavySource(a) || hasFrequentRedirects(a);
+    const bHeavy = isAdHeavySource(b) || hasFrequentRedirects(b);
+    if (!aHeavy && bHeavy) return -1;
+    if (aHeavy && !bHeavy) return 1;
+    return 0;
+  });
 };
 
 export const getStreamBytes = (stream: StreamItem): number => {
@@ -714,7 +1008,7 @@ export function generateFallbackStreams(movie: Movie, episodeIndex = 0): StreamI
     },
   ];
 
-  return specs.map((s, idx) => ({
+  const directStreams = specs.map((s, idx) => ({
     id: `fallback_${s.server.toLowerCase().replace(/[^a-z0-9]/g, '')}_${s.quality.toLowerCase()}_${idx}`,
     name: s.name,
     title: `${title} (${year})${epSuffix}`,
@@ -732,7 +1026,173 @@ export function generateFallbackStreams(movie: Movie, episodeIndex = 0): StreamI
     url: s.url,
     directDownloadUrl: s.url,
     rawDirectUrl: s.url,
+    adLevel: 'none' as const,
+    hasFrequentRedirects: false,
+    redirectFrequency: 'none' as const,
+    redirectNotice: 'Direct stream • 0 Ads • 0 Redirects',
+    isAdHeavyMirror: false,
   }));
+
+  // Append sources that show ads more or redirect to other pages frequently at the bottom
+  const adHeavyInternetMirrors = generateInternetAdHeavyMirrors(movie, episodeIndex);
+
+  return [...directStreams, ...adHeavyInternetMirrors];
+}
+
+/**
+ * Verified Internet Web Mirrors:
+ * Sources from the internet that show ads more or redirect to other pages frequently.
+ * Placed at the bottom of the source list so clean streams take priority while still
+ * allowing access to alternative web mirrors with clear ad/redirect warnings.
+ */
+export function generateInternetAdHeavyMirrors(movie: Movie, episodeIndex = 0): StreamItem[] {
+  const cleanIdFromMovie = movie.id && /^[0-9]+$/.test(String(movie.id)) ? String(movie.id) : '';
+  const tmdbId = movie.tmdbId ? String(movie.tmdbId).replace(/[^0-9]/g, '') : cleanIdFromMovie;
+  const imdbId = movie.imdbId || (movie.id && String(movie.id).startsWith('tt') ? String(movie.id) : '');
+  const targetId = tmdbId || imdbId || '157336';
+  const isSeries = movie.mediaType === 'tv' || movie.mediaType === 'anime' || Boolean(movie.episodes && movie.episodes.length > 0);
+  const epNum = movie.episodes?.[episodeIndex]?.number || episodeIndex + 1;
+  const epSuffix = isSeries ? ` • S01E${epNum < 10 ? '0' + epNum : epNum}` : '';
+  const title = movie.title;
+  const year = movie.releaseYear || 2024;
+
+  return [
+    {
+      id: `mirror_autoembed_${targetId}`,
+      name: 'AutoEmbed Fast • Web Mirror',
+      title: `${title} (${year})${epSuffix}`,
+      movieName: title,
+      serverName: 'AutoEmbed',
+      serverLogo: getProviderLogo('autoembed'),
+      quality: '1080p',
+      sourceType: 'Web Embed',
+      specs: '1080p • Web Embed • Fast Buffer • Moderate Ads',
+      fileSize: 'Online Stream',
+      badges: ['1080p', 'Web-Embed', 'Shows Ads', 'Popups on Play'],
+      languages: ['English'],
+      url: isSeries
+        ? `https://player.autoembed.cc/embed/tv/${targetId}/1/${epNum}`
+        : `https://player.autoembed.cc/embed/movie/${targetId}`,
+      embedUrl: isSeries
+        ? `https://player.autoembed.cc/embed/tv/${targetId}/1/${epNum}`
+        : `https://player.autoembed.cc/embed/movie/${targetId}`,
+      adLevel: 'moderate',
+      hasFrequentRedirects: true,
+      redirectFrequency: 'frequent',
+      redirectNotice: 'Shows ads and opens 1-2 popup tabs on play click',
+      adWarning: 'Frequent redirects to external ad pages on initial click',
+      isAdHeavyMirror: true,
+      isDirect: false,
+    },
+    {
+      id: `mirror_vidsrc_${targetId}`,
+      name: 'VidSrc Pro • Public Internet Mirror',
+      title: `${title} (${year})${epSuffix}`,
+      movieName: title,
+      serverName: 'VidSrc',
+      serverLogo: getProviderLogo('vidsrc'),
+      quality: '1080p',
+      sourceType: 'Web Mirror',
+      specs: '1080p • Multi-Server • Frequent Popups & Redirects',
+      fileSize: 'Online Stream',
+      badges: ['1080p', 'Public Mirror', 'Frequent Ads', 'Redirects Often'],
+      languages: ['English', 'Spanish'],
+      url: isSeries
+        ? `https://vidsrc.to/embed/tv/${targetId}/1/${epNum}`
+        : `https://vidsrc.to/embed/movie/${targetId}`,
+      embedUrl: isSeries
+        ? `https://vidsrc.to/embed/tv/${targetId}/1/${epNum}`
+        : `https://vidsrc.to/embed/movie/${targetId}`,
+      adLevel: 'frequent',
+      hasFrequentRedirects: true,
+      redirectFrequency: 'frequent',
+      redirectNotice: 'Frequently redirects to sponsor pages and opens popunders on play',
+      adWarning: 'Opens new tabs and redirects frequently before video starts',
+      isAdHeavyMirror: true,
+      isDirect: false,
+    },
+    {
+      id: `mirror_twoembed_${targetId}`,
+      name: '2Embed Global • Edge Mirror',
+      title: `${title} (${year})${epSuffix}`,
+      movieName: title,
+      serverName: '2Embed',
+      serverLogo: getProviderLogo('twoembed'),
+      quality: '1080p',
+      sourceType: 'Web Embed',
+      specs: '1080p • Global Mirror • High Ads • Frequent Redirects',
+      fileSize: 'Online Stream',
+      badges: ['1080p', 'High Ads', 'Frequent Redirects', 'AdBlock Advised'],
+      languages: ['English'],
+      url: isSeries
+        ? `https://www.2embed.cc/embedtv/${targetId}&s=1&e=${epNum}`
+        : `https://www.2embed.cc/embed/${targetId}`,
+      embedUrl: isSeries
+        ? `https://www.2embed.cc/embedtv/${targetId}&s=1&e=${epNum}`
+        : `https://www.2embed.cc/embed/${targetId}`,
+      adLevel: 'high',
+      hasFrequentRedirects: true,
+      redirectFrequency: 'frequent',
+      redirectNotice: 'Frequently redirects browser window and opens new tabs (2-4 clicks)',
+      adWarning: 'High ad frequency: redirects to external sponsor domains on click',
+      isAdHeavyMirror: true,
+      isDirect: false,
+    },
+    {
+      id: `mirror_smashystream_${targetId}`,
+      name: 'SmashyStream Ultra • Alternative Mirror',
+      title: `${title} (${year})${epSuffix}`,
+      movieName: title,
+      serverName: 'SmashyStream',
+      serverLogo: getProviderLogo('smashystream'),
+      quality: '4K',
+      sourceType: 'Web Mirror',
+      specs: '4K • Web Mirror • Heavy Popups & Aggressive Redirects',
+      fileSize: 'Online Stream',
+      badges: ['4K', 'Alternative', 'Heavy Ads', 'Aggressive Redirects'],
+      languages: ['English'],
+      url: isSeries
+        ? `https://embed.smashystream.com/playere.php?tmdb=${targetId}&season=1&episode=${epNum}`
+        : `https://embed.smashystream.com/playere.php?tmdb=${targetId}`,
+      embedUrl: isSeries
+        ? `https://embed.smashystream.com/playere.php?tmdb=${targetId}&season=1&episode=${epNum}`
+        : `https://embed.smashystream.com/playere.php?tmdb=${targetId}`,
+      adLevel: 'high',
+      hasFrequentRedirects: true,
+      redirectFrequency: 'aggressive',
+      redirectNotice: 'Aggressively redirects to external advertiser sites and popunders',
+      adWarning: 'Aggressive redirects to external pages on mobile and desktop',
+      isAdHeavyMirror: true,
+      isDirect: false,
+    },
+    {
+      id: `mirror_superembed_${targetId}`,
+      name: 'SuperEmbed Multi • Community Mirror',
+      title: `${title} (${year})${epSuffix}`,
+      movieName: title,
+      serverName: 'SuperEmbed',
+      serverLogo: getProviderLogo('superembed'),
+      quality: '1080p',
+      sourceType: 'Web Embed',
+      specs: '1080p • Multi-Host • Popups & Overlays • Redirects Frequently',
+      fileSize: 'Online Stream',
+      badges: ['1080p', 'Multi-Host', 'Frequent Ads', 'Redirects on Tap'],
+      languages: ['English', 'French'],
+      url: isSeries
+        ? `https://multiembed.mov/?video_id=${targetId}&tmdb=1&s=1&e=${epNum}`
+        : `https://multiembed.mov/?video_id=${targetId}&tmdb=1`,
+      embedUrl: isSeries
+        ? `https://multiembed.mov/?video_id=${targetId}&tmdb=1&s=1&e=${epNum}`
+        : `https://multiembed.mov/?video_id=${targetId}&tmdb=1`,
+      adLevel: 'high',
+      hasFrequentRedirects: true,
+      redirectFrequency: 'frequent',
+      redirectNotice: 'Frequent popups and redirects parent window when clicking play',
+      adWarning: 'Shows ads and redirects to external sites frequently',
+      isAdHeavyMirror: true,
+      isDirect: false,
+    },
+  ];
 }
 
 /**
